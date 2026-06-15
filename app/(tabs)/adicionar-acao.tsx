@@ -1,34 +1,42 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, Image, Modal } from 'react-native';
 import { MaterialCommunityIcons, Ionicons, Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useGlobalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../../src/lib/supabase';
 
-const COLORS = { 
-  background: '#121214', 
-  primary: '#5EFC44', 
-  secondary: '#50E3C2', 
-  cardBg: '#1E1E24', 
-  textLight: '#FFFFFF', 
+const COLORS = {
+  background: '#121214',
+  primary: '#5EFC44',
+  secondary: '#50E3C2',
+  cardBg: '#1E1E24',
+  textLight: '#FFFFFF',
   textGray: '#888888',
   border: '#2A2A30'
 };
 
 export default function AdicionarAcaoScreen() {
   const router = useRouter();
+  // Parâmetros que a Home (ou outra tela) pode enviar para pré-selecionar destino.
+  // - acao: abre diretamente o modal dessa ação, na categoria dela.
+  // - categoria: apenas seleciona o separador dessa categoria.
+  // IMPORTANTE: usamos useGlobalSearchParams (e não useLocalSearchParams) porque
+  // esta tela é uma TAB e a navegação vem de outra tab. O useLocalSearchParams
+  // não recebe os params de forma fiável entre tabs; o global recebe sempre.
+  const params = useGlobalSearchParams<{ categoria?: string; acao?: string }>();
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  
+
   const [categorias, setCategorias] = useState<any[]>([]);
   const [acoes, setAcoes] = useState<any[]>([]);
-  
+
   const [activeCatId, setActiveCatId] = useState<number | null>(null);
   const [selectedAcao, setSelectedAcao] = useState<any | null>(null);
-  
+
   const [quantidade, setQuantidade] = useState(1);
   const [descricao, setDescricao] = useState('');
-  
+
   const [showCameraOptions, setShowCameraOptions] = useState(false);
   const [fotoUri, setFotoUri] = useState<string | null>(null);
 
@@ -36,12 +44,36 @@ export default function AdicionarAcaoScreen() {
     fetchDados();
   }, []);
 
+  // Reage aos parâmetros da rota assim que os dados estão carregados.
+  // Fica num efeito separado para também funcionar quando se volta a navegar
+  // para esta tab já montada (os tabs não desmontam entre navegações).
+  useEffect(() => {
+    if (loading) return;
+
+    if (params.acao) {
+      const alvo = acoes.find((a) => String(a.id) === String(params.acao));
+      if (alvo) {
+        setActiveCatId(alvo.categoria_id);
+        setSelectedAcao(alvo);
+        setQuantidade(1);
+        setFotoUri(null);
+        setShowCameraOptions(false);
+      }
+    } else if (params.categoria) {
+      setActiveCatId(Number(params.categoria));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.acao, params.categoria, loading, acoes]);
+
   async function fetchDados() {
     setLoading(true);
     const { data: catData } = await supabase.from('categorias_acao').select('*').order('id');
     if (catData && catData.length > 0) {
       setCategorias(catData);
-      setActiveCatId(catData[0].id);
+      // Só define a categoria por defeito se NÃO viermos com um destino específico.
+      if (!params.categoria && !params.acao) {
+        setActiveCatId(catData[0].id);
+      }
     }
     const { data: acoesData } = await supabase.from('catalogo_acoes').select('*').eq('ativo', true);
     if (acoesData) {
@@ -60,8 +92,8 @@ export default function AdicionarAcaoScreen() {
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false, 
-        quality: 0.5,         
+        allowsEditing: false,
+        quality: 0.5,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -84,7 +116,7 @@ export default function AdicionarAcaoScreen() {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false, 
+        allowsEditing: false,
         quality: 0.5,
       });
 
@@ -109,9 +141,6 @@ export default function AdicionarAcaoScreen() {
     setShowCameraOptions(false);
   }
 
-  // ==============================================================
-  // AQUI ACONTECE A MAGIA DO UPLOAD PARA A NUVEM
-  // ==============================================================
   async function handleSubmeter() {
     if (!fotoUri) {
       Alert.alert('Falta a Prova!', 'Por favor, tira uma foto ou escolhe da galeria.');
@@ -120,7 +149,7 @@ export default function AdicionarAcaoScreen() {
 
     setSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
-    
+
     if (!user) {
       Alert.alert('Erro', 'Sessão expirada. Faz login novamente.');
       setSubmitting(false);
@@ -128,15 +157,12 @@ export default function AdicionarAcaoScreen() {
     }
 
     try {
-      // 1. Preparar o nome único do ficheiro
       const fileExt = fotoUri.split('.').pop() || 'jpg';
       const fileName = `${user.id}_${Date.now()}.${fileExt}`;
 
-      // 2. Ler a foto local do telemóvel e convertê-la em dados crus (ArrayBuffer)
       const response = await fetch(fotoUri);
       const arrayBuffer = await response.arrayBuffer();
 
-      // 3. Fazer o Upload para o Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('provas_acoes')
         .upload(fileName, arrayBuffer, {
@@ -145,30 +171,26 @@ export default function AdicionarAcaoScreen() {
 
       if (uploadError) throw uploadError;
 
-      // 4. Ir buscar o Link Público final da foto!
       const { data: { publicUrl } } = supabase.storage
         .from('provas_acoes')
         .getPublicUrl(fileName);
 
-      // 5. Calcular pontuação
       const totalXp = selectedAcao.xp_base * quantidade;
       const totalCo2 = selectedAcao.co2_estimado ? selectedAcao.co2_estimado * quantidade : 0;
 
-      // 6. Guardar na Tabela a submissão COM O LINK REAL DA NUVEM
       const { error: insertError } = await supabase.from('submissoes_acao').insert({
         utilizador_id: user.id,
         acao_id: selectedAcao.id,
         quantidade: quantidade,
         descricao_user: descricao,
-        foto_url: publicUrl, // <--- MAGIA AQUI!
-        estado: 'aprovado', 
+        foto_url: publicUrl,
+        estado: 'aprovado',
         xp_atribuido: totalXp,
         co2_atribuido: totalCo2
       });
 
       if (insertError) throw insertError;
 
-      // 7. Dar o XP ao perfil do utilizador
       const { data: profile } = await supabase.from('utilizadores').select('xp_total').eq('id', user.id).single();
       if (profile) {
         const novoXp = (profile.xp_total || 0) + totalXp;
@@ -203,7 +225,7 @@ export default function AdicionarAcaoScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      
+
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Novo Impacto</Text>
         <Text style={styles.headerSubtitle}>Escolhe a categoria da tua ação</Text>
@@ -212,8 +234,8 @@ export default function AdicionarAcaoScreen() {
       <View style={styles.categoriesWrapper}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
           {categorias.map((cat) => (
-            <TouchableOpacity 
-              key={cat.id} 
+            <TouchableOpacity
+              key={cat.id}
               style={[styles.catTab, activeCatId === cat.id && { backgroundColor: cat.cor_hex || COLORS.primary }]}
               onPress={() => setActiveCatId(cat.id)}
             >
@@ -229,8 +251,8 @@ export default function AdicionarAcaoScreen() {
           <Text style={styles.emptyText}>Nenhuma ação encontrada nesta categoria.</Text>
         ) : (
           acoesFiltradas.map((acao) => (
-            <TouchableOpacity 
-              key={acao.id} 
+            <TouchableOpacity
+              key={acao.id}
               style={styles.actionCard}
               activeOpacity={0.7}
               onPress={() => { setSelectedAcao(acao); setQuantidade(1); setFotoUri(null); setShowCameraOptions(false); }}
@@ -259,12 +281,12 @@ export default function AdicionarAcaoScreen() {
           </View>
 
           <ScrollView contentContainerStyle={styles.formContent} showsVerticalScrollIndicator={false}>
-            
+
             {selectedAcao && (
               <View style={[styles.selectedCard, { borderColor: categoriaModal?.cor_hex || COLORS.primary }]}>
                 <MaterialCommunityIcons name={categoriaModal?.icon_url || 'leaf'} size={40} color={categoriaModal?.cor_hex || COLORS.primary} />
                 <Text style={styles.selectedTitle}>{selectedAcao.titulo}</Text>
-                
+
                 <View style={styles.quantityContainer}>
                   <TouchableOpacity onPress={handleDecrement} style={styles.qtyButton}>
                     <Feather name="minus" size={24} color="#FFF" />
@@ -299,11 +321,11 @@ export default function AdicionarAcaoScreen() {
             />
 
             <Text style={styles.label}>Comprovativo Fotográfico *</Text>
-            
+
             {!fotoUri ? (
               !showCameraOptions ? (
-                <TouchableOpacity 
-                  style={styles.cameraButton} 
+                <TouchableOpacity
+                  style={styles.cameraButton}
                   onPress={() => setShowCameraOptions(true)}
                   activeOpacity={0.7}
                 >
@@ -317,7 +339,7 @@ export default function AdicionarAcaoScreen() {
                     <Ionicons name="camera" size={32} color={COLORS.primary} />
                     <Text style={styles.cameraOptionText}>Tirar Foto</Text>
                   </TouchableOpacity>
-                  
+
                   <TouchableOpacity style={styles.cameraOptionBtn} onPress={handleAbrirGaleria}>
                     <Ionicons name="images" size={32} color={COLORS.secondary} />
                     <Text style={styles.cameraOptionText}>Abrir Galeria</Text>
@@ -325,8 +347,8 @@ export default function AdicionarAcaoScreen() {
                 </View>
               )
             ) : (
-              <TouchableOpacity 
-                style={styles.previewContainer} 
+              <TouchableOpacity
+                style={styles.previewContainer}
                 onPress={() => setShowCameraOptions(true)}
                 activeOpacity={0.8}
               >
@@ -339,23 +361,23 @@ export default function AdicionarAcaoScreen() {
             )}
 
             {showCameraOptions && fotoUri && (
-               <View style={[styles.cameraOptionsContainer, { marginTop: 15 }]}>
-                 <TouchableOpacity style={styles.cameraOptionBtn} onPress={handleTirarFoto}>
-                   <Ionicons name="camera" size={24} color={COLORS.primary} />
-                   <Text style={styles.cameraOptionText}>Nova Foto</Text>
-                 </TouchableOpacity>
-                 <TouchableOpacity style={styles.cameraOptionBtn} onPress={handleAbrirGaleria}>
-                   <Ionicons name="images" size={24} color={COLORS.secondary} />
-                   <Text style={styles.cameraOptionText}>Galeria</Text>
-                 </TouchableOpacity>
-               </View>
+              <View style={[styles.cameraOptionsContainer, { marginTop: 15 }]}>
+                <TouchableOpacity style={styles.cameraOptionBtn} onPress={handleTirarFoto}>
+                  <Ionicons name="camera" size={24} color={COLORS.primary} />
+                  <Text style={styles.cameraOptionText}>Nova Foto</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.cameraOptionBtn} onPress={handleAbrirGaleria}>
+                  <Ionicons name="images" size={24} color={COLORS.secondary} />
+                  <Text style={styles.cameraOptionText}>Galeria</Text>
+                </TouchableOpacity>
+              </View>
             )}
 
           </ScrollView>
 
           <View style={styles.fixedBottomBar}>
-            <TouchableOpacity 
-              style={[styles.submitBtn, submitting && { opacity: 0.7 }]} 
+            <TouchableOpacity
+              style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
               onPress={handleSubmeter}
               disabled={submitting}
             >
