@@ -9,6 +9,7 @@ const COLORS = {
   background: '#121214',
   primary: '#5EFC44',
   secondary: '#50E3C2',
+  water: '#3b82f6', // Cor para a badge da água
   cardBg: '#1E1E24',
   textLight: '#FFFFFF',
   textGray: '#888888',
@@ -18,11 +19,6 @@ const COLORS = {
 export default function AdicionarAcaoScreen() {
   const router = useRouter();
   // Parâmetros que a Home (ou outra tela) pode enviar para pré-selecionar destino.
-  // - acao: abre diretamente o modal dessa ação, na categoria dela.
-  // - categoria: apenas seleciona o separador dessa categoria.
-  // IMPORTANTE: usamos useGlobalSearchParams (e não useLocalSearchParams) porque
-  // esta tela é uma TAB e a navegação vem de outra tab. O useLocalSearchParams
-  // não recebe os params de forma fiável entre tabs; o global recebe sempre.
   const params = useGlobalSearchParams<{ categoria?: string; acao?: string }>();
 
   const [loading, setLoading] = useState(true);
@@ -45,8 +41,6 @@ export default function AdicionarAcaoScreen() {
   }, []);
 
   // Reage aos parâmetros da rota assim que os dados estão carregados.
-  // Fica num efeito separado para também funcionar quando se volta a navegar
-  // para esta tab já montada (os tabs não desmontam entre navegações).
   useEffect(() => {
     if (loading) return;
 
@@ -70,7 +64,6 @@ export default function AdicionarAcaoScreen() {
     const { data: catData } = await supabase.from('categorias_acao').select('*').order('id');
     if (catData && catData.length > 0) {
       setCategorias(catData);
-      // Só define a categoria por defeito se NÃO viermos com um destino específico.
       if (!params.categoria && !params.acao) {
         setActiveCatId(catData[0].id);
       }
@@ -175,9 +168,12 @@ export default function AdicionarAcaoScreen() {
         .from('provas_acoes')
         .getPublicUrl(fileName);
 
+      // 1. Cálculos de XP, CO2 e Água
       const totalXp = selectedAcao.xp_base * quantidade;
       const totalCo2 = selectedAcao.co2_estimado ? selectedAcao.co2_estimado * quantidade : 0;
+      const totalAgua = selectedAcao.agua_estimada ? selectedAcao.agua_estimada * quantidade : 0;
 
+      // 2. Inserir submissão com os novos valores
       const { error: insertError } = await supabase.from('submissoes_acao').insert({
         utilizador_id: user.id,
         acao_id: selectedAcao.id,
@@ -186,15 +182,29 @@ export default function AdicionarAcaoScreen() {
         foto_url: publicUrl,
         estado: 'aprovado',
         xp_atribuido: totalXp,
-        co2_atribuido: totalCo2
+        co2_atribuido: totalCo2,
+        agua_atribuida: totalAgua
       });
 
       if (insertError) throw insertError;
 
-      const { data: profile } = await supabase.from('utilizadores').select('xp_total').eq('id', user.id).single();
+      // 3. Atualizar saldos totais do Perfil do Utilizador
+      const { data: profile } = await supabase
+        .from('utilizadores')
+        .select('xp_total, co2_poupado, agua_poupada')
+        .eq('id', user.id)
+        .single();
+
       if (profile) {
         const novoXp = (profile.xp_total || 0) + totalXp;
-        await supabase.from('utilizadores').update({ xp_total: novoXp }).eq('id', user.id);
+        const novoCo2 = Number(profile.co2_poupado || 0) + totalCo2;
+        const novoAgua = Number(profile.agua_poupada || 0) + totalAgua;
+
+        await supabase.from('utilizadores').update({ 
+          xp_total: novoXp,
+          co2_poupado: novoCo2,
+          agua_poupada: novoAgua
+        }).eq('id', user.id);
       }
 
       setSubmitting(false);
@@ -220,8 +230,11 @@ export default function AdicionarAcaoScreen() {
 
   const acoesFiltradas = acoes.filter(a => a.categoria_id === activeCatId);
   const categoriaModal = selectedAcao ? categorias.find(c => c.id === selectedAcao.categoria_id) : null;
+  
+  // Valores para mostrar no ecrã de revisão
   const totalXpModal = selectedAcao ? selectedAcao.xp_base * quantidade : 0;
   const totalCo2Modal = selectedAcao && selectedAcao.co2_estimado ? (selectedAcao.co2_estimado * quantidade).toFixed(2) : 0;
+  const totalAguaModal = selectedAcao && selectedAcao.agua_estimada ? (selectedAcao.agua_estimada * quantidade).toFixed(2) : 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -300,11 +313,17 @@ export default function AdicionarAcaoScreen() {
                   </TouchableOpacity>
                 </View>
 
+                {/* Resumo Dinâmico (XP, CO2, Água) COM A CORREÇÃO DO TERNÁRIO */}
                 <View style={styles.selectedBadges}>
                   <Text style={styles.badgeXp}>+{totalXpModal} XP</Text>
-                  {selectedAcao.co2_estimado && (
+                  
+                  {selectedAcao.co2_estimado ? (
                     <Text style={styles.badgeCo2}>-{totalCo2Modal}kg CO₂</Text>
-                  )}
+                  ) : null}
+                  
+                  {selectedAcao.agua_estimada ? (
+                    <Text style={styles.badgeAgua}>-{totalAguaModal}L Água</Text>
+                  ) : null}
                 </View>
               </View>
             )}
@@ -420,9 +439,10 @@ const styles = StyleSheet.create({
   qtyValueContainer: { paddingHorizontal: 25, alignItems: 'center' },
   qtyValue: { color: '#FFF', fontSize: 24, fontWeight: 'bold' },
   qtyUnit: { color: COLORS.textGray, fontSize: 12, marginTop: 2, textTransform: 'uppercase' },
-  selectedBadges: { flexDirection: 'row', gap: 10 },
+  selectedBadges: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', justifyContent: 'center' },
   badgeXp: { backgroundColor: COLORS.primary, color: '#000', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, fontWeight: 'bold', overflow: 'hidden' },
   badgeCo2: { backgroundColor: COLORS.secondary, color: '#000', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, fontWeight: 'bold', overflow: 'hidden' },
+  badgeAgua: { backgroundColor: COLORS.water, color: '#FFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, fontWeight: 'bold', overflow: 'hidden' },
   label: { color: '#FFF', fontSize: 14, fontWeight: 'bold', marginBottom: 10, marginLeft: 4 },
   textInput: { backgroundColor: COLORS.cardBg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, color: '#FFF', padding: 15, fontSize: 14, minHeight: 100, textAlignVertical: 'top', marginBottom: 25 },
   cameraButton: { backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 2, borderColor: COLORS.border, borderStyle: 'dashed', borderRadius: 20, padding: 30, alignItems: 'center', justifyContent: 'center', marginBottom: 30 },

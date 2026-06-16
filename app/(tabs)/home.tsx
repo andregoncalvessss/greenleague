@@ -26,10 +26,11 @@ const COLORS = {
 };
 
 // ============================================================
-// Tipos (correspondem às colunas do teu esquema)
+// Tipos
 // ============================================================
 interface PerfilHome {
   nome: string;
+  nivel: number;
   xp_total: number;
   co2_poupado: number;
   avatar_url: string | null;
@@ -65,10 +66,8 @@ interface DadosHome {
 }
 
 // ============================================================
-// Helpers (tempo, nível, streak) — tudo local, sem dependências
+// Helpers
 // ============================================================
-
-// Tempo relativo em PT-PT: "agora mesmo", "há 5 min", "ontem"...
 function tempoRelativo(iso: string): string {
   const data = new Date(iso);
   if (Number.isNaN(data.getTime())) return '';
@@ -86,39 +85,10 @@ function tempoRelativo(iso: string): string {
   return data.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 }
 
-// XP necessário para subir DO nível n para n+1 (ajusta para afinar dificuldade).
-function xpParaSubir(nivel: number): number {
-  return 100 + (nivel - 1) * 50;
-}
-
-interface ProgressoNivel {
-  nivel: number;
-  xpNoNivel: number;
-  xpDoNivel: number;
-  progresso: number;
-}
-
-// Deriva o nível atual e o progresso DENTRO do nível a partir do xp_total.
-function calcularProgresso(xpTotal: number): ProgressoNivel {
-  let nivel = 1;
-  let restante = Math.max(0, Math.floor(Number(xpTotal) || 0));
-  while (restante >= xpParaSubir(nivel)) {
-    restante -= xpParaSubir(nivel);
-    nivel += 1;
-  }
-  const xpDoNivel = xpParaSubir(nivel);
-  return {
-    nivel,
-    xpNoNivel: restante,
-    xpDoNivel,
-    progresso: xpDoNivel > 0 ? restante / xpDoNivel : 0,
-  };
-}
-
-// Conta dias consecutivos com submissões, a partir de hoje (ou ontem).
 function chaveDia(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
+
 function calcularStreak(datasISO: string[]): number {
   if (datasISO.length === 0) return 0;
   const dias = new Set(
@@ -143,20 +113,22 @@ function calcularStreak(datasISO: string[]): number {
 function isUrl(s?: string | null): boolean {
   return !!s && /^https?:\/\//i.test(s);
 }
+
 function iniciais(nome?: string | null): string {
   if (!nome) return '?';
   return nome.trim().charAt(0).toUpperCase();
 }
 
 // ============================================================
-// Acesso à BD: 5 queries em paralelo
+// Acesso à BD
 // ============================================================
 async function obterDadosHome(userId: string): Promise<DadosHome> {
   const [perfilRes, categoriasRes, sugestoesRes, comunidadeRes, streakRes] =
     await Promise.all([
       supabase
         .from('utilizadores')
-        .select('nome, xp_total, co2_poupado, avatar_url')
+        // AQUI: Adicionado o 'nivel' à query
+        .select('nome, nivel, xp_total, co2_poupado, avatar_url')
         .eq('id', userId)
         .single(),
       supabase
@@ -170,7 +142,7 @@ async function obterDadosHome(userId: string): Promise<DadosHome> {
           'id, categoria_id, titulo, descricao, xp_base, categoria:categorias_acao!categoria_id ( nome, cor_hex )'
         )
         .eq('ativo', true)
-        .not('categoria_id', 'is', null) // toda a ação sugerida tem de ter categoria
+        .not('categoria_id', 'is', null)
         .order('xp_base', { ascending: false })
         .limit(3),
       supabase
@@ -194,36 +166,29 @@ async function obterDadosHome(userId: string): Promise<DadosHome> {
 
   if (perfilRes.error) throw perfilRes.error;
 
-  const p = perfilRes.data as {
-    nome: string | null;
-    xp_total: number | null;
-    co2_poupado: number | null;
-    avatar_url: string | null;
-  } | null;
+  const p = perfilRes.data as any;
 
   const perfil: PerfilHome | null = p
     ? {
         nome: p.nome ?? 'Estudante',
+        nivel: Number(p.nivel ?? 1),
         xp_total: Number(p.xp_total ?? 0),
         co2_poupado: Number(p.co2_poupado ?? 0),
         avatar_url: p.avatar_url,
       }
     : null;
 
-  const datasStreak = (streakRes.data ?? []).map(
-    (r: { criado_em: string }) => r.criado_em
-  );
+  const datasStreak = (streakRes.data ?? []).map((r: any) => r.criado_em);
 
   return {
     perfil,
-    categorias: (categoriasRes.data ?? []) as unknown as CategoriaRapida[],
-    sugestoes: (sugestoesRes.data ?? []) as unknown as AcaoSugerida[],
-    comunidade: (comunidadeRes.data ?? []) as unknown as AtividadeComunidade[],
+    categorias: (categoriasRes.data ?? []) as any[],
+    sugestoes: (sugestoesRes.data ?? []) as any[],
+    comunidade: (comunidadeRes.data ?? []) as any[],
     streak: calcularStreak(datasStreak),
   };
 }
 
-// Ícone de uma categoria: aceita URL de imagem ou nome de ícone (MaterialCommunityIcons).
 function IconeCategoria({ categoria }: { categoria: CategoriaRapida }) {
   const cor = categoria.cor_hex || COLORS.primary;
   if (isUrl(categoria.icon_url)) {
@@ -294,7 +259,12 @@ export default function HomeScreen() {
 
   const { perfil, categorias, sugestoes, comunidade, streak } = dados;
   const primeiroNome = perfil.nome.split(' ')[0];
-  const prog = calcularProgresso(perfil.xp_total);
+
+  // AQUI: Lógica exata e simples a ler da Base de Dados
+  const nivel = perfil.nivel;
+  const xpAtual = perfil.xp_total;
+  const xpObjetivo = nivel * 1000; 
+  const progressoPercentagem = Math.min((xpAtual / xpObjetivo) * 100, 100);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -313,7 +283,6 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={atualizar} tintColor={COLORS.primary} colors={[COLORS.primary]} />
         }
       >
-        {/* Perfil */}
         <View style={styles.profileSection}>
           <View style={{ flex: 1 }}>
             <Text style={styles.greetingText}>Olá, {primeiroNome}!</Text>
@@ -338,12 +307,11 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Nível e XP */}
         <View style={styles.xpSection}>
           <View style={styles.xpHeader}>
-            <Text style={styles.levelText}>Nível {prog.nivel}</Text>
+            <Text style={styles.levelText}>Nível {nivel}</Text>
             <Text style={styles.xpNumbers}>
-              {prog.xpNoNivel} / {prog.xpDoNivel} XP
+              {xpAtual} / {xpObjetivo} XP
             </Text>
           </View>
           <View style={styles.progressBarBg}>
@@ -351,7 +319,7 @@ export default function HomeScreen() {
               colors={['#5EFC44', '#50E3C2']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              style={[styles.progressBarFill, { width: `${Math.round(prog.progresso * 100)}%` }]}
+              style={[styles.progressBarFill, { width: `${progressoPercentagem}%` }]}
             />
           </View>
           <View style={styles.co2Row}>
@@ -362,7 +330,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Ações Rápidas */}
         {categorias.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Ações Rápidas</Text>
@@ -384,7 +351,6 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* Ações sugeridas */}
         {sugestoes.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Ações sugeridas</Text>
@@ -415,7 +381,6 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* Atividade da Comunidade */}
         <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Atividade da Comunidade</Text>
         {comunidade.length === 0 ? (
           <Text style={styles.vazioComunidade}>Ainda não há atividade. Sê o primeiro!</Text>
