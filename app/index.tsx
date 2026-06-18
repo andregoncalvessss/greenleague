@@ -24,20 +24,39 @@ export default function LoginScreen() {
     setLoading(true); // Liga a rodinha de carregamento no botão
     
     // Tenta fazer login no Supabase
-    const { error } = await supabase.auth.signInWithPassword({ 
+    const { data: loginData, error } = await supabase.auth.signInWithPassword({ 
       email: email.trim().toLowerCase(), 
       password 
     });
-    
-    setLoading(false); // Desliga a rodinha
 
     if (error) {
+      setLoading(false);
       Alert.alert('Erro no Login', 'Credenciais incorretas. Verifica o teu email e password.');
+      return;
+    }
+
+    const user = loginData.user;
+
+    const { data: perfil, error: perfilError } = await supabase
+      .from('utilizadores')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    setLoading(false);
+
+    if (perfilError) {
+      Alert.alert('Erro', 'Não foi possível carregar o perfil.');
+      return;
+    }
+
+    if (perfil?.role === 'admin') {
+      router.replace('/backoffice');
     } else {
-      // Login com sucesso! Vai para o Dashboard (home.tsx)
-      router.replace('/home'); 
+      router.replace('/home');
     }
   }
+
 
   return (
     <SafeAreaView style={styles.container}>
