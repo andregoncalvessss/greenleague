@@ -6,6 +6,7 @@ export default function RootLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="register" />
       <Stack.Screen name="onboarding" />
+      <Stack.Screen name="definicoes" />
       {/* Diz ao Expo que a pasta (tabs) existe */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -105,7 +106,7 @@ export default function ProfileScreen() {
             <TouchableOpacity style={styles.iconCircle}>
               <Feather name="share-2" size={22} color="#FFF" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconCircle}>
+            <TouchableOpacity style={styles.iconCircle} onPress={() => router.push('/definicoes')}>
               <Ionicons name="settings-outline" size={22} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -113,9 +114,13 @@ export default function ProfileScreen() {
           <View style={styles.profileCard}>
             <View style={styles.avatarRow}>
               <View style={styles.avatarBox}>
-                <Text style={styles.avatarText}>
-                  {userData?.nome ? userData.nome.charAt(0).toUpperCase() : '?'}
-                </Text>
+                {userData?.avatar_url ? (
+                  <Image source={{ uri: userData.avatar_url }} style={styles.avatarImg} contentFit="cover" />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {userData?.nome ? userData.nome.charAt(0).toUpperCase() : '?'}
+                  </Text>
+                )}
               </View>
               <View style={styles.userInfo}>
                 <Text style={styles.userName} numberOfLines={1}>{userData?.nome || 'Jogador'}</Text>
@@ -181,6 +186,30 @@ export default function ProfileScreen() {
              </View>
           </View>
 
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={() => {
+              Alert.alert(
+                'Sair da Conta',
+                'Tens a certeza que queres sair?',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  {
+                    text: 'Sair',
+                    style: 'destructive',
+                    onPress: async () => {
+                      await supabase.auth.signOut();
+                      router.replace('/');
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Ionicons name="log-out-outline" size={20} color="#FF4444" />
+            <Text style={styles.logoutText}>Sair da Conta</Text>
+          </TouchableOpacity>
+
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -197,7 +226,8 @@ const styles = StyleSheet.create({
   
   profileCard: { backgroundColor: COLORS.cardBg, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', marginBottom: 30 },
   avatarRow: { flexDirection: 'row', gap: 20, marginBottom: 20 },
-  avatarBox: { width: 100, height: 100, borderRadius: 20, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
+  avatarBox: { width: 100, height: 100, borderRadius: 20, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  avatarImg: { width: '100%', height: '100%' },
   avatarText: { fontSize: 48, fontWeight: 'bold', color: '#000' },
   userInfo: { flex: 1, justifyContent: 'center' },
   userName: { color: '#FFF', fontSize: 24, fontWeight: 'bold' },
@@ -226,5 +256,8 @@ const styles = StyleSheet.create({
   statBox: { flex: 1, alignItems: 'center' },
   statValue: { color: COLORS.primary, fontSize: 32, fontWeight: 'bold' },
   statLabel: { color: COLORS.textGray, fontSize: 12, textAlign: 'center' },
-  divider: { width: 1, height: 40, backgroundColor: 'rgba(255,255,255,0.1)' }
+  divider: { width: 1, height: 40, backgroundColor: 'rgba(255,255,255,0.1)' },
+
+  logoutButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 30, paddingVertical: 16, backgroundColor: 'rgba(255, 68, 68, 0.1)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255, 68, 68, 0.3)' },
+  logoutText: { color: '#FF4444', fontSize: 16, fontWeight: '600' },
 });
