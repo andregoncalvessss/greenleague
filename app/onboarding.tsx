@@ -1,24 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { 
-  StyleSheet, Text, View, TouchableOpacity, SafeAreaView, 
-  ScrollView, TextInput, Alert, ActivityIndicator, Modal, FlatList, KeyboardAvoidingView, Platform 
+  StyleSheet, Text, View, TouchableOpacity, SafeAreaView,
+  ScrollView, TextInput, ActivityIndicator, Modal, FlatList, KeyboardAvoidingView, Platform
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../src/lib/supabase';
-
-const COLORS = { 
-  background: '#121214', primary: '#5EFC44', secondary: '#50E3C2', 
-  cardBg: '#1E1E24', inputBorder: '#333333',
-  textLight: '#FFFFFF', textGray: '#888888', modalBg: '#1A1A20'
-};
+import { useToast } from '../components/ToastProvider';
+import { useTheme } from '../components/ThemeProvider';
 
 const ANOS = ['1º Ano', '2º Ano', '3º Ano', '4º Ano', 'Outro'];
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  
-  // Dados do Utilizador logado
+  const { showToast } = useToast();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState('');
   const [userName, setUserName] = useState('');
@@ -62,7 +60,7 @@ export default function OnboardingScreen() {
 
   const openModal = (type: 'escola' | 'curso' | 'ano') => {
     if (type === 'curso' && !escolaObj) {
-      Alert.alert('Atenção', 'Por favor, seleciona a tua escola primeiro.');
+      showToast({ type: 'warning', message: 'Seleciona primeiro a tua escola.' });
       return;
     }
     setModalType(type);
@@ -95,39 +93,39 @@ export default function OnboardingScreen() {
 
   async function handleSaveProfile() {
     if (!escolaObj || !cursoObj || !numAluno.trim() || !ano) {
-      Alert.alert('Campos Incompletos', 'Por favor, preenche todos os campos para entrares na liga.');
+      showToast({ type: 'warning', title: 'Campos Incompletos', message: 'Preenche todos os campos para entrares na liga.' });
+      return;
+    }
+    if (numAluno.trim().length < 1 || numAluno.trim().length > 5) {
+      showToast({ type: 'warning', title: 'Número de Aluno inválido', message: 'O número de aluno deve ter entre 1 e 5 dígitos.' });
       return;
     }
 
     setSaveLoading(true);
 
-    // Guardar os dados na tabela 'utilizadores' exatamente com as colunas que definiste
     const { error } = await supabase.from('utilizadores').upsert({
       id: userId,
-      nome: userName, 
+      nome: userName,
       email: userEmail,
       escola_id: escolaObj.id,
       curso_id: cursoObj.id,
       numero_aluno: numAluno,
-      ano_frequencia: ano // A nova coluna que adicionámos
+      ano_frequencia: ano
     });
 
     if (error) {
-      Alert.alert('Erro ao guardar', 'Não foi possível guardar o perfil. Detalhes: ' + error.message);
+      showToast({ type: 'error', title: 'Erro ao guardar', message: error.message });
       setSaveLoading(false);
       return;
     }
 
-    // Atualizamos também os metadados do Auth por segurança
     await supabase.auth.updateUser({
       data: { escola_id: escolaObj.id, curso_id: cursoObj.id, numero_aluno: numAluno, ano_frequencia: ano }
     });
 
     setSaveLoading(false);
-    Alert.alert('Perfil Configurado!', 'Tudo pronto. Bem-vindo à Green League!');
-    
-    // Entra na Home!
-   router.replace('/(tabs)/home');
+    showToast({ type: 'success', title: 'Perfil Configurado!', message: 'Tudo pronto. Bem-vindo à Green League!' });
+    router.replace('/(tabs)/home');
   }
 
   // Define os dados a renderizar no modal dependendo da escolha
@@ -139,7 +137,7 @@ export default function OnboardingScreen() {
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
           <View style={styles.headerCentered}>
-            <MaterialCommunityIcons name="trophy-outline" size={60} color={COLORS.primary} style={styles.glowIcon} />
+            <MaterialCommunityIcons name="trophy-outline" size={60} color={colors.primary} style={styles.glowIcon} />
             <Text style={[styles.title, styles.glowText]}>CONFIGURA O TEU PERFIL</Text>
             <Text style={styles.subtitle}>Falta apenas isto para começares a pontuar</Text>
           </View>
@@ -148,39 +146,40 @@ export default function OnboardingScreen() {
             
             <Text style={styles.label}>Qual é a tua Escola? *</Text>
             <TouchableOpacity style={styles.inputWithIcon} onPress={() => openModal('escola')} activeOpacity={0.7}>
-              <Ionicons name="business-outline" size={20} color={COLORS.primary} style={styles.inputIcon} />
-              <Text style={[styles.inputText, !escolaObj && { color: COLORS.textGray }]}>
+              <Ionicons name="business-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+              <Text style={[styles.inputText, !escolaObj && { color: colors.textMuted }]}>
                 {escolaObj ? escolaObj.nome : "Seleciona a tua escola"}
               </Text>
-              <Ionicons name="chevron-down" size={20} color={COLORS.textGray} />
+              <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
             </TouchableOpacity>
 
             <Text style={styles.label}>Qual é o teu Curso? *</Text>
             <TouchableOpacity style={styles.inputWithIcon} onPress={() => openModal('curso')} activeOpacity={0.7}>
-              <Ionicons name="school-outline" size={20} color={COLORS.primary} style={styles.inputIcon} />
-              <Text style={[styles.inputText, !cursoObj && { color: COLORS.textGray }]}>
+              <Ionicons name="school-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+              <Text style={[styles.inputText, !cursoObj && { color: colors.textMuted }]}>
                 {cursoObj ? cursoObj.nome : "Seleciona o teu curso"}
               </Text>
-              <Ionicons name="chevron-down" size={20} color={COLORS.textGray} />
+              <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
             </TouchableOpacity>
 
             <Text style={styles.label}>Número de Aluno *</Text>
-            <TextInput 
-              style={styles.input} 
-              placeholder="Ex: 23451" 
-              placeholderTextColor={COLORS.textGray} 
+            <TextInput
+              style={styles.input}
+              placeholder="Ex: 23451"
+              placeholderTextColor={colors.placeholderText}
               keyboardType="numeric"
+              maxLength={5}
               value={numAluno}
               onChangeText={setNumAluno}
             />
 
             <Text style={styles.label}>Ano que frequentas *</Text>
             <TouchableOpacity style={styles.inputWithIcon} onPress={() => openModal('ano')} activeOpacity={0.7}>
-              <MaterialCommunityIcons name="calendar-blank-outline" size={20} color={COLORS.primary} style={styles.inputIcon} />
-              <Text style={[styles.inputText, !ano && { color: COLORS.textGray }]}>
+              <MaterialCommunityIcons name="calendar-blank-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+              <Text style={[styles.inputText, !ano && { color: colors.textMuted }]}>
                 {ano ? ano : "Seleciona o teu ano"}
               </Text>
-              <Ionicons name="chevron-down" size={20} color={COLORS.textGray} />
+              <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.actionButton, styles.glowButton, { marginTop: 40 }]} onPress={handleSaveProfile} disabled={saveLoading}>
@@ -223,7 +222,30 @@ export default function OnboardingScreen() {
   );
 }
 
-// Estilos
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background }, scrollContent: { flexGrow: 1, padding: 20, justifyContent: 'center' }, headerCentered: { alignItems: 'center', marginBottom: 30, marginTop: 20 }, title: { fontSize: 24, fontWeight: '900', color: COLORS.primary, marginTop: 15, letterSpacing: 1, textAlign: 'center' }, subtitle: { fontSize: 14, color: COLORS.secondary, marginTop: 5, fontWeight: '600', textAlign: 'center' }, form: { width: '100%' }, label: { color: COLORS.textLight, fontSize: 14, fontWeight: '600', marginBottom: 8, marginTop: 15 }, input: { backgroundColor: COLORS.cardBg, borderWidth: 1, borderColor: COLORS.inputBorder, borderRadius: 12, color: COLORS.textLight, padding: 16, fontSize: 16 }, inputWithIcon: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.cardBg, borderWidth: 1, borderColor: COLORS.inputBorder, borderRadius: 12, paddingHorizontal: 16 }, inputIcon: { marginRight: 10 }, inputText: { flex: 1, color: COLORS.textLight, paddingVertical: 16, fontSize: 16 }, actionButton: { backgroundColor: COLORS.primary, paddingVertical: 18, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }, actionButtonText: { color: '#000000', fontSize: 18, fontWeight: '900', letterSpacing: 1 }, glowText: { textShadowColor: COLORS.primary, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 }, glowIcon: { textShadowColor: COLORS.primary, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 15 }, glowButton: { shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 15, elevation: 10 }, modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20 }, modalContent: { width: '100%', maxHeight: '80%', backgroundColor: COLORS.modalBg, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: COLORS.inputBorder }, modalTitle: { color: COLORS.primary, fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' }, modalOption: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: COLORS.inputBorder }, modalOptionText: { color: COLORS.textLight, fontSize: 16 }, modalCloseButton: { marginTop: 20, paddingVertical: 12, alignItems: 'center', backgroundColor: COLORS.cardBg, borderRadius: 10, borderWidth: 1, borderColor: COLORS.inputBorder }, modalCloseText: { color: COLORS.textGray, fontSize: 14, fontWeight: 'bold' }
-});
+function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.surface },
+    scrollContent: { flexGrow: 1, padding: 20, justifyContent: 'center' },
+    headerCentered: { alignItems: 'center', marginBottom: 30, marginTop: 20 },
+    title: { fontSize: 24, fontWeight: '900', color: c.primary, marginTop: 15, letterSpacing: 1, textAlign: 'center' },
+    subtitle: { fontSize: 14, color: c.secondary, marginTop: 5, fontWeight: '600', textAlign: 'center' },
+    form: { width: '100%' },
+    label: { color: c.text, fontSize: 14, fontWeight: '600', marginBottom: 8, marginTop: 15 },
+    input: { backgroundColor: c.card, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 12, color: c.text, padding: 16, fontSize: 16 },
+    inputWithIcon: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 12, paddingHorizontal: 16 },
+    inputIcon: { marginRight: 10 },
+    inputText: { flex: 1, color: c.text, paddingVertical: 16, fontSize: 16 },
+    actionButton: { backgroundColor: c.primary, paddingVertical: 18, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+    actionButtonText: { color: '#000000', fontSize: 18, fontWeight: '900', letterSpacing: 1 },
+    glowText: { textShadowColor: c.primary, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 },
+    glowIcon: { textShadowColor: c.primary, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 15 },
+    glowButton: { shadowColor: c.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 15, elevation: 10 },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    modalContent: { width: '100%', maxHeight: '80%', backgroundColor: c.modal, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: c.inputBorder },
+    modalTitle: { color: c.primary, fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+    modalOption: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: c.inputBorder },
+    modalOptionText: { color: c.text, fontSize: 16 },
+    modalCloseButton: { marginTop: 20, paddingVertical: 12, alignItems: 'center', backgroundColor: c.card, borderRadius: 10, borderWidth: 1, borderColor: c.inputBorder },
+    modalCloseText: { color: c.textMuted, fontSize: 14, fontWeight: 'bold' },
+  });
+}

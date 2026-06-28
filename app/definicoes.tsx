@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ScrollView,
-  TextInput, Alert, ActivityIndicator, Modal, FlatList, KeyboardAvoidingView, Platform
+  TextInput, ActivityIndicator, Modal, FlatList, KeyboardAvoidingView, Platform, Switch
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -9,17 +9,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../src/lib/supabase';
-
-const COLORS = {
-  background: '#121214', primary: '#5EFC44', secondary: '#50E3C2',
-  cardBg: 'rgba(30, 30, 36, 0.8)', inputBorder: '#333333', modalBg: '#1A1A20',
-  textLight: '#FFFFFF', textGray: '#888888', danger: '#FF4444'
-};
+import { useToast } from '../components/ToastProvider';
+import { useTheme } from '../components/ThemeProvider';
 
 const BUCKET = 'avatars';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { showToast, showConfirm } = useToast();
+  const { colors, isDark, toggleTheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,7 +88,7 @@ export default function SettingsScreen() {
   async function handleChangePhoto() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permissão necessária', 'Precisamos de acesso às tuas fotos para alterares o avatar.');
+      showToast({ type: 'warning', title: 'Permissão necessária', message: 'Precisamos de acesso às tuas fotos para alterares o avatar.' });
       return;
     }
 
@@ -117,16 +116,16 @@ export default function SettingsScreen() {
       if (upErr) throw upErr;
 
       const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      const publicUrl = `${pub.publicUrl}?t=${Date.now()}`; // evita cache antigo
+      const publicUrl = `${pub.publicUrl}?t=${Date.now()}`;
 
       const { error: dbErr } = await supabase
         .from('utilizadores').update({ avatar_url: publicUrl }).eq('id', userId);
       if (dbErr) throw dbErr;
 
       setAvatarUrl(publicUrl);
-      Alert.alert('Sucesso', 'Foto de perfil atualizada!');
+      showToast({ type: 'success', message: 'Foto de perfil atualizada!' });
     } catch (e: any) {
-      Alert.alert('Erro', 'Não foi possível atualizar a foto. ' + (e?.message || ''));
+      showToast({ type: 'error', message: 'Não foi possível atualizar a foto. ' + (e?.message || '') });
     } finally {
       setUploadingFoto(false);
     }
@@ -135,7 +134,7 @@ export default function SettingsScreen() {
   // ---------- MODAL ESCOLA/CURSO ----------
   const openModal = (type: 'escola' | 'curso') => {
     if (type === 'curso' && !escolaObj) {
-      Alert.alert('Atenção', 'Seleciona primeiro a escola.');
+      showToast({ type: 'warning', message: 'Seleciona primeiro a escola.' });
       return;
     }
     setModalType(type);
@@ -158,8 +157,8 @@ export default function SettingsScreen() {
 
   // ---------- GUARDAR DADOS ----------
   async function handleSaveDados() {
-    if (!nome.trim()) { Alert.alert('Erro', 'O nome não pode ficar vazio.'); return; }
-    if (!escolaObj || !cursoObj) { Alert.alert('Erro', 'Seleciona a escola e o curso.'); return; }
+    if (!nome.trim()) { showToast({ type: 'warning', message: 'O nome não pode ficar vazio.' }); return; }
+    if (!escolaObj || !cursoObj) { showToast({ type: 'warning', message: 'Seleciona a escola e o curso.' }); return; }
     if (!userId) return;
 
     try {
@@ -170,9 +169,9 @@ export default function SettingsScreen() {
         curso_id: cursoObj.id,
       }).eq('id', userId);
       if (error) throw error;
-      Alert.alert('Sucesso', 'Dados atualizados!');
+      showToast({ type: 'success', message: 'Dados atualizados!' });
     } catch (e: any) {
-      Alert.alert('Erro', 'Não foi possível guardar. ' + (e?.message || ''));
+      showToast({ type: 'error', message: 'Não foi possível guardar. ' + (e?.message || '') });
     } finally {
       setSavingDados(false);
     }
@@ -181,14 +180,14 @@ export default function SettingsScreen() {
   // ---------- EMAIL ----------
   async function handleUpdateEmail() {
     const novo = email.trim().toLowerCase();
-    if (!novo || !novo.includes('@')) { Alert.alert('Erro', 'Introduz um email válido.'); return; }
+    if (!novo || !novo.includes('@')) { showToast({ type: 'warning', message: 'Introduz um email válido.' }); return; }
     try {
       setSavingEmail(true);
       const { error } = await supabase.auth.updateUser({ email: novo });
       if (error) throw error;
-      Alert.alert('Confirma o teu email', 'Enviámos um link de confirmação para o novo email. O email só muda depois de confirmares.');
+      showToast({ type: 'info', title: 'Confirma o teu email', message: 'Enviámos um link de confirmação. O email só muda depois de confirmares.' });
     } catch (e: any) {
-      Alert.alert('Erro', 'Não foi possível atualizar o email. ' + (e?.message || ''));
+      showToast({ type: 'error', message: 'Não foi possível atualizar o email. ' + (e?.message || '') });
     } finally {
       setSavingEmail(false);
     }
@@ -196,49 +195,43 @@ export default function SettingsScreen() {
 
   // ---------- PASSWORD ----------
   async function handleUpdatePassword() {
-    if (password.length < 6) { Alert.alert('Erro', 'A password deve ter pelo menos 6 caracteres.'); return; }
-    if (password !== password2) { Alert.alert('Erro', 'As passwords não coincidem.'); return; }
+    if (password.length < 6) { showToast({ type: 'warning', message: 'A password deve ter pelo menos 6 caracteres.' }); return; }
+    if (password !== password2) { showToast({ type: 'warning', message: 'As passwords não coincidem.' }); return; }
     try {
       setSavingPass(true);
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
       setPassword(''); setPassword2('');
-      Alert.alert('Sucesso', 'Password alterada!');
+      showToast({ type: 'success', message: 'Password alterada com sucesso!' });
     } catch (e: any) {
-      Alert.alert('Erro', 'Não foi possível alterar a password. ' + (e?.message || ''));
+      showToast({ type: 'error', message: 'Não foi possível alterar a password. ' + (e?.message || '') });
     } finally {
       setSavingPass(false);
     }
   }
 
   // ---------- ELIMINAR CONTA ----------
-  function handleDeleteAccount() {
-    Alert.alert(
-      'Eliminar Conta',
-      'Esta ação é permanente. Todos os teus dados serão apagados e não poderás recuperar a conta. Tens a certeza?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase.rpc('delete_user');
-              if (error) throw error;
-              await supabase.auth.signOut();
-              router.replace('/');
-            } catch (e: any) {
-              Alert.alert('Erro', 'Não foi possível eliminar a conta. ' + (e?.message || ''));
-            }
-          },
-        },
-      ]
-    );
+  async function handleDeleteAccount() {
+    const ok = await showConfirm({
+      title: 'Eliminar Conta',
+      message: 'Esta ação é permanente. Todos os teus dados serão apagados e não poderás recuperar a conta.',
+      confirmText: 'Eliminar',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      const { error } = await supabase.rpc('delete_user');
+      if (error) throw error;
+      await supabase.auth.signOut();
+      router.replace('/');
+    } catch (e: any) {
+      showToast({ type: 'error', message: 'Não foi possível eliminar a conta. ' + (e?.message || '') });
+    }
   }
 
   if (loading) return (
     <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-      <ActivityIndicator size="large" color={COLORS.primary} />
+      <ActivityIndicator size="large" color={colors.primary} />
     </View>
   );
 
@@ -271,9 +264,28 @@ export default function SettingsScreen() {
               </View>
               <TouchableOpacity style={styles.changePhotoBtn} onPress={handleChangePhoto} disabled={uploadingFoto}>
                 {uploadingFoto
-                  ? <ActivityIndicator color={COLORS.primary} />
-                  : <><Ionicons name="camera-outline" size={18} color={COLORS.primary} /><Text style={styles.changePhotoText}>Alterar Foto</Text></>}
+                  ? <ActivityIndicator color={colors.primary} />
+                  : <><Ionicons name="camera-outline" size={18} color={colors.primary} /><Text style={styles.changePhotoText}>Alterar Foto</Text></>}
               </TouchableOpacity>
+            </View>
+
+            {/* APARÊNCIA */}
+            <Text style={styles.sectionTitle}>Aparência</Text>
+            <View style={styles.card}>
+              <View style={styles.themeRow}>
+                <Ionicons
+                  name={isDark ? 'moon-outline' : 'sunny-outline'}
+                  size={22}
+                  color={colors.primary}
+                />
+                <Text style={styles.themeLabel}>Modo Claro / Modo Escuro</Text>
+                <Switch
+                  value={!isDark}
+                  onValueChange={toggleTheme}
+                  thumbColor={colors.primary}
+                  trackColor={{ false: colors.inputBorder, true: colors.secondary }}
+                />
+              </View>
             </View>
 
             {/* DADOS PESSOAIS */}
@@ -281,24 +293,24 @@ export default function SettingsScreen() {
             <View style={styles.card}>
               <Text style={styles.label}>Nome</Text>
               <TextInput style={styles.input} value={nome} onChangeText={setNome}
-                placeholder="O teu nome" placeholderTextColor={COLORS.textGray} />
+                placeholder="O teu nome" placeholderTextColor={colors.placeholderText} />
 
               <Text style={styles.label}>Escola</Text>
               <TouchableOpacity style={styles.selector} onPress={() => openModal('escola')}>
-                <Ionicons name="business-outline" size={20} color={COLORS.primary} />
-                <Text style={[styles.selectorText, !escolaObj && { color: COLORS.textGray }]}>
+                <Ionicons name="business-outline" size={20} color={colors.primary} />
+                <Text style={[styles.selectorText, !escolaObj && { color: colors.textMuted }]}>
                   {escolaObj?.nome || 'Seleciona a escola'}
                 </Text>
-                <Ionicons name="chevron-down" size={20} color={COLORS.textGray} />
+                <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
               </TouchableOpacity>
 
               <Text style={styles.label}>Curso</Text>
               <TouchableOpacity style={styles.selector} onPress={() => openModal('curso')}>
-                <Ionicons name="school-outline" size={20} color={COLORS.primary} />
-                <Text style={[styles.selectorText, !cursoObj && { color: COLORS.textGray }]}>
+                <Ionicons name="school-outline" size={20} color={colors.primary} />
+                <Text style={[styles.selectorText, !cursoObj && { color: colors.textMuted }]}>
                   {cursoObj?.nome || 'Seleciona o curso'}
                 </Text>
-                <Ionicons name="chevron-down" size={20} color={COLORS.textGray} />
+                <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.primaryBtn} onPress={handleSaveDados} disabled={savingDados}>
@@ -312,28 +324,28 @@ export default function SettingsScreen() {
               <Text style={styles.label}>Email</Text>
               <TextInput style={styles.input} value={email} onChangeText={setEmail}
                 keyboardType="email-address" autoCapitalize="none"
-                placeholder="email@ipvc.pt" placeholderTextColor={COLORS.textGray} />
+                placeholder="email@ipvc.pt" placeholderTextColor={colors.placeholderText} />
               <TouchableOpacity style={styles.secondaryBtn} onPress={handleUpdateEmail} disabled={savingEmail}>
-                {savingEmail ? <ActivityIndicator color={COLORS.primary} /> : <Text style={styles.secondaryBtnText}>Atualizar Email</Text>}
+                {savingEmail ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.secondaryBtnText}>Atualizar Email</Text>}
               </TouchableOpacity>
 
               <View style={styles.hr} />
 
               <Text style={styles.label}>Nova Password</Text>
               <TextInput style={styles.input} value={password} onChangeText={setPassword}
-                secureTextEntry placeholder="••••••••" placeholderTextColor={COLORS.textGray} />
+                secureTextEntry placeholder="••••••••" placeholderTextColor={colors.placeholderText} />
               <Text style={styles.label}>Confirmar Password</Text>
               <TextInput style={styles.input} value={password2} onChangeText={setPassword2}
-                secureTextEntry placeholder="••••••••" placeholderTextColor={COLORS.textGray} />
+                secureTextEntry placeholder="••••••••" placeholderTextColor={colors.placeholderText} />
               <TouchableOpacity style={styles.secondaryBtn} onPress={handleUpdatePassword} disabled={savingPass}>
-                {savingPass ? <ActivityIndicator color={COLORS.primary} /> : <Text style={styles.secondaryBtnText}>Alterar Password</Text>}
+                {savingPass ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.secondaryBtnText}>Alterar Password</Text>}
               </TouchableOpacity>
             </View>
 
             {/* ZONA PERIGOSA */}
-            <Text style={[styles.sectionTitle, { color: COLORS.danger }]}>Zona Perigosa</Text>
+            <Text style={[styles.sectionTitle, { color: colors.red }]}>Zona Perigosa</Text>
             <TouchableOpacity style={styles.dangerBtn} onPress={handleDeleteAccount}>
-              <MaterialCommunityIcons name="trash-can-outline" size={20} color={COLORS.danger} />
+              <MaterialCommunityIcons name="trash-can-outline" size={20} color={colors.red} />
               <Text style={styles.dangerText}>Eliminar Conta</Text>
             </TouchableOpacity>
 
@@ -367,41 +379,46 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 10 },
-  topTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
-  iconCircle: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  scrollContent: { padding: 20, paddingBottom: 60 },
+function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.surface },
+    topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 10 },
+    topTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+    iconCircle: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+    scrollContent: { padding: 20, paddingBottom: 60 },
 
-  avatarWrap: { alignItems: 'center', marginBottom: 20 },
-  avatarBox: { width: 110, height: 110, borderRadius: 24, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
-  avatarImg: { width: '100%', height: '100%' },
-  avatarText: { fontSize: 52, fontWeight: 'bold', color: '#000' },
-  changePhotoBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12, backgroundColor: 'rgba(94,252,68,0.1)', borderWidth: 1, borderColor: 'rgba(94,252,68,0.3)' },
-  changePhotoText: { color: COLORS.primary, fontWeight: '600' },
+    avatarWrap: { alignItems: 'center', marginBottom: 20 },
+    avatarBox: { width: 110, height: 110, borderRadius: 24, backgroundColor: c.primary, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+    avatarImg: { width: '100%', height: '100%' },
+    avatarText: { fontSize: 52, fontWeight: 'bold', color: '#000' },
+    changePhotoBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12, backgroundColor: 'rgba(94,252,68,0.1)', borderWidth: 1, borderColor: 'rgba(94,252,68,0.3)' },
+    changePhotoText: { color: c.primary, fontWeight: '600' },
 
-  sectionTitle: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 12, marginTop: 10 },
-  card: { backgroundColor: COLORS.cardBg, borderRadius: 20, padding: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', marginBottom: 25 },
-  label: { color: COLORS.textLight, fontSize: 13, fontWeight: '600', marginBottom: 8, marginTop: 12 },
-  input: { backgroundColor: '#1E1E24', borderWidth: 1, borderColor: COLORS.inputBorder, borderRadius: 12, color: COLORS.textLight, padding: 14, fontSize: 15 },
-  selector: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#1E1E24', borderWidth: 1, borderColor: COLORS.inputBorder, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14 },
-  selectorText: { flex: 1, color: COLORS.textLight, fontSize: 15 },
+    sectionTitle: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 12, marginTop: 10 },
+    card: { backgroundColor: c.card, borderRadius: 20, padding: 18, borderWidth: 1, borderColor: c.border, marginBottom: 25 },
+    label: { color: c.text, fontSize: 13, fontWeight: '600', marginBottom: 8, marginTop: 12 },
+    input: { backgroundColor: c.inputBg, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 12, color: c.text, padding: 14, fontSize: 15 },
+    selector: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: c.inputBg, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14 },
+    selectorText: { flex: 1, color: c.text, fontSize: 15 },
 
-  primaryBtn: { backgroundColor: COLORS.primary, paddingVertical: 15, borderRadius: 12, alignItems: 'center', marginTop: 20 },
-  primaryBtnText: { color: '#000', fontWeight: 'bold', fontSize: 15 },
-  secondaryBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 14, backgroundColor: 'rgba(94,252,68,0.08)', borderWidth: 1, borderColor: 'rgba(94,252,68,0.3)' },
-  secondaryBtnText: { color: COLORS.primary, fontWeight: 'bold', fontSize: 15 },
-  hr: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 18 },
+    themeRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    themeLabel: { flex: 1, color: c.text, fontSize: 15, fontWeight: '500' },
 
-  dangerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16, borderRadius: 16, backgroundColor: 'rgba(255,68,68,0.1)', borderWidth: 1, borderColor: 'rgba(255,68,68,0.3)' },
-  dangerText: { color: COLORS.danger, fontSize: 16, fontWeight: '600' },
+    primaryBtn: { backgroundColor: c.primary, paddingVertical: 15, borderRadius: 12, alignItems: 'center', marginTop: 20 },
+    primaryBtnText: { color: '#000', fontWeight: 'bold', fontSize: 15 },
+    secondaryBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 14, backgroundColor: 'rgba(94,252,68,0.08)', borderWidth: 1, borderColor: 'rgba(94,252,68,0.3)' },
+    secondaryBtnText: { color: c.primary, fontWeight: 'bold', fontSize: 15 },
+    hr: { height: 1, backgroundColor: c.border, marginVertical: 18 },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalContent: { width: '100%', maxHeight: '80%', backgroundColor: COLORS.modalBg, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: COLORS.inputBorder },
-  modalTitle: { color: COLORS.primary, fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
-  modalOption: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: COLORS.inputBorder },
-  modalOptionText: { color: COLORS.textLight, fontSize: 16 },
-  modalCloseButton: { marginTop: 20, paddingVertical: 12, alignItems: 'center', backgroundColor: '#1E1E24', borderRadius: 10, borderWidth: 1, borderColor: COLORS.inputBorder },
-  modalCloseText: { color: COLORS.textGray, fontSize: 14, fontWeight: 'bold' },
-});
+    dangerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16, borderRadius: 16, backgroundColor: 'rgba(255,68,68,0.1)', borderWidth: 1, borderColor: 'rgba(255,68,68,0.3)' },
+    dangerText: { color: c.red, fontSize: 16, fontWeight: '600' },
+
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    modalContent: { width: '100%', maxHeight: '80%', backgroundColor: c.modal, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: c.inputBorder },
+    modalTitle: { color: c.primary, fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+    modalOption: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: c.inputBorder },
+    modalOptionText: { color: c.text, fontSize: 16 },
+    modalCloseButton: { marginTop: 20, paddingVertical: 12, alignItems: 'center', backgroundColor: c.inputBg, borderRadius: 10, borderWidth: 1, borderColor: c.inputBorder },
+    modalCloseText: { color: c.textMuted, fontSize: 14, fontWeight: 'bold' },
+  });
+}
