@@ -2,16 +2,12 @@ import React from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { View, TouchableOpacity, Platform } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-
-const COLORS = { 
-  background: '#121214', 
-  primary: '#5EFC44', 
-  inactive: '#888888', 
-  border: '#1E1E24' 
-};
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../../components/ThemeProvider';
 
 export default function TabsLayout() {
   const router = useRouter();
+  const { colors, isDark } = useTheme();
 
   return (
     <View style={{ flex: 1 }}>
@@ -22,16 +18,16 @@ export default function TabsLayout() {
         screenOptions={{
           headerShown: false,
           tabBarStyle: {
-            backgroundColor: COLORS.background,
+            backgroundColor: colors.surface,
             borderTopWidth: 1,
-            borderTopColor: COLORS.border,
+            borderTopColor: colors.border,
             height: Platform.OS === 'ios' ? 85 : 70, 
             paddingBottom: Platform.OS === 'ios' ? 25 : 10, 
             paddingTop: 8,
             elevation: 0,
           },
-          tabBarActiveTintColor: COLORS.primary,
-          tabBarInactiveTintColor: COLORS.inactive,
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.textMuted,
           tabBarLabelStyle: {
             fontSize: 10, 
             fontWeight: '600',
@@ -98,24 +94,38 @@ export default function TabsLayout() {
       <TouchableOpacity
         style={{
           position: 'absolute',
-          bottom: Platform.OS === 'ios' ? 100 : 85, // Fica perfeitamente acima da Navbar
-          right: 20, // Colado ao lado direito
-          width: 60,
-          height: 60,
-          borderRadius: 30,
-          backgroundColor: COLORS.primary,
-          justifyContent: 'center',
-          alignItems: 'center',
-          shadowColor: COLORS.primary,
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.5,
-          shadowRadius: 10,
-          elevation: 8,
+          bottom: Platform.OS === 'ios' ? 100 : 85,
+          right: 20,
+          shadowColor: colors.primary,
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: isDark ? 0.55 : 0.35,
+          shadowRadius: 18,
+          elevation: 14,
         }}
         onPress={() => router.push('/(tabs)/adicionar-acao')}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
       >
-        <Ionicons name="add" size={36} color="#000" />
+        {/* Anel exterior subtil */}
+        <View style={{
+          width: 68, height: 68, borderRadius: 34,
+          padding: 4,
+          backgroundColor: isDark ? 'rgba(94,252,68,0.18)' : 'rgba(21,128,61,0.12)',
+          justifyContent: 'center', alignItems: 'center',
+        }}>
+          <LinearGradient
+            colors={isDark ? ['#5EFC44', '#22C55E', '#50E3C2'] : [colors.primary, colors.secondary]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              width: 60, height: 60, borderRadius: 30,
+              justifyContent: 'center', alignItems: 'center',
+              borderWidth: 1.5,
+              borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)',
+            }}
+          >
+            <Ionicons name="add" size={34} color={isDark ? '#000' : '#FFF'} />
+          </LinearGradient>
+        </View>
       </TouchableOpacity>
     </View>
   );

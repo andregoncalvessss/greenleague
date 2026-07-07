@@ -1,26 +1,18 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { StyleSheet, Text, View, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator, Image, FlatList, RefreshControl } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../src/lib/supabase';
-
-const COLORS = {
-  background: '#121214',
-  primary: '#5EFC44',
-  secondary: '#50E3C2',
-  cardBg: '#1a1a1e',
-  textLight: '#FFFFFF',
-  textGray: '#888888',
-  border: '#2A2A30'
-};
+import { useTheme } from '../../components/ThemeProvider';
 
 const PAGE_SIZE = 20;
 
-type Tab = 'global' | 'escola' | 'curso';
+type Tab = 'global' | 'escola' | 'curso' | 'equipas';
 
 interface Escola { id: number; nome: string; sigla: string; }
 interface Curso { id: number; nome: string; escola_id: number; }
 interface Jogador { id: string; nome: string | null; xp_total: number | null; nivel: number | null; avatar_url: string | null; }
+interface EquipaRank { id: string; nome: string; avatar_url: string | null; xp_total: number | null; num_membros: number; }
 interface Me { id: string; nome: string | null; escola_id: number | null; curso_id: number | null; xp_total: number | null; nivel: number | null; avatar_url: string | null; }
 
 function inicial(nome?: string | null): string {
@@ -30,11 +22,11 @@ function primeiroNome(nome?: string | null): string {
   return nome ? nome.split(' ')[0] : 'Jogador';
 }
 
-function RankAvatar({ uri, ini, colors, size, radius, fontSize }: {
-  uri: string | null; ini: string; colors: string[]; size: number; radius: number; fontSize: number;
+function RankAvatar({ uri, ini, colors, size, radius, fontSize, cardBg }: {
+  uri: string | null; ini: string; colors: string[]; size: number; radius: number; fontSize: number; cardBg: string;
 }) {
   if (uri) {
-    return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: radius, backgroundColor: COLORS.cardBg }} />;
+    return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: radius, backgroundColor: cardBg }} />;
   }
   return (
     <LinearGradient colors={colors as [string, string, ...string[]]} style={{ width: size, height: size, borderRadius: radius, justifyContent: 'center', alignItems: 'center' }}>
@@ -44,6 +36,8 @@ function RankAvatar({ uri, ini, colors, size, radius, fontSize }: {
 }
 
 export default function RankingScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [activeTab, setActiveTab] = useState<Tab>('global');
   const [bootstrapping, setBootstrapping] = useState(true);
 
@@ -53,7 +47,8 @@ export default function RankingScreen() {
   const [selectedEscolaId, setSelectedEscolaId] = useState<number | null>(null);
   const [selectedCursoId, setSelectedCursoId] = useState<number | null>(null);
 
-  const [rankingData, setRankingData] = useState<Jogador[]>([]);
+  const [rankingData, setRankingData] = useState<(Jogador | EquipaRank)[]>([]);
+  const [minhaEquipa, setMinhaEquipa] = useState<EquipaRank | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingFirst, setLoadingFirst] = useState(false);
@@ -75,6 +70,26 @@ export default function RankingScreen() {
           .single();
         perfil = (data as Me) ?? { id: user.id, nome: null, escola_id: null, curso_id: null, xp_total: 0, nivel: 1, avatar_url: null };
         setMe(perfil);
+
+        // Equipa do utilizador (para destacar no ranking de equipas)
+        const { data: membro } = await supabase
+          .from('equipa_membros')
+          .select('equipa_id')
+          .eq('utilizador_id', user.id)
+          .maybeSingle();
+        if (membro?.equipa_id) {
+          const { data: eq } = await supabase
+            .from('equipas')
+            .select('id, nome, avatar_url, xp_total, equipa_membros(count)')
+            .eq('id', membro.equipa_id)
+            .single();
+          if (eq) {
+            setMinhaEquipa({
+              id: eq.id, nome: eq.nome, avatar_url: eq.avatar_url,
+              xp_total: eq.xp_total, num_membros: (eq as any).equipa_membros?.[0]?.count || 0,
+            });
+          }
+        }
       }
       const { data: escolasData } = await supabase.from('escolas').select('id, nome, sigla').order('nome');
       const lista = (escolasData ?? []) as Escola[];
@@ -105,10 +120,33 @@ export default function RankingScreen() {
     return q
       .order('nivel', { ascending: false })
       .order('xp_total', { ascending: false })
-      .order('id', { ascending: true }); 
+      .order('id', { ascending: true });
+  }
+
+  function queryEquipas() {
+    return supabase
+      .from('equipas')
+      .select('id, nome, avatar_url, xp_total, equipa_membros(count)')
+      .order('xp_total', { ascending: false })
+      .order('id', { ascending: true });
+  }
+
+  function mapEquipas(data: any[]): EquipaRank[] {
+    return (data ?? []).map((e: any) => ({
+      id: e.id, nome: e.nome, avatar_url: e.avatar_url,
+      xp_total: e.xp_total, num_membros: e.equipa_membros?.[0]?.count || 0,
+    }));
   }
 
   const calcularMinhaPosicao = useCallback(async (): Promise<number | null> => {
+    if (activeTab === 'equipas') {
+      if (!minhaEquipa) return null;
+      const { count } = await supabase
+        .from('equipas')
+        .select('id', { count: 'exact', head: true })
+        .gt('xp_total', minhaEquipa.xp_total ?? 0);
+      return (count ?? 0) + 1;
+    }
     if (!me) return null;
     if (activeTab === 'escola' && selectedEscolaId !== me.escola_id) return null;
     if (activeTab === 'curso' && selectedCursoId !== me.curso_id) return null;
@@ -119,12 +157,12 @@ export default function RankingScreen() {
     let q: any = supabase.from('utilizadores').select('id', { count: 'exact', head: true });
     if (activeTab === 'escola') q = q.eq('escola_id', selectedEscolaId);
     else if (activeTab === 'curso') q = q.eq('curso_id', selectedCursoId);
-    
+
     q = q.or(`nivel.gt.${myNivel},and(nivel.eq.${myNivel},xp_total.gt.${myXp})`);
 
     const { count } = await q;
     return (count ?? 0) + 1;
-  }, [me, activeTab, selectedEscolaId, selectedCursoId]);
+  }, [me, activeTab, selectedEscolaId, selectedCursoId, minhaEquipa]);
 
   const carregarInicial = useCallback(async () => {
     if (bootstrapping) return;
@@ -135,11 +173,17 @@ export default function RankingScreen() {
     aPedirRef.current = true;
     setLoadingFirst(true);
     try {
-      const { data } = await aplicarFiltros(
-        supabase.from('utilizadores').select('id, nome, xp_total, nivel, avatar_url')
-      ).range(0, PAGE_SIZE - 1);
-      const lista = (data ?? []) as Jogador[];
-      
+      let lista: (Jogador | EquipaRank)[];
+      if (activeTab === 'equipas') {
+        const { data } = await queryEquipas().range(0, PAGE_SIZE - 1);
+        lista = mapEquipas(data ?? []);
+      } else {
+        const { data } = await aplicarFiltros(
+          supabase.from('utilizadores').select('id, nome, xp_total, nivel, avatar_url')
+        ).range(0, PAGE_SIZE - 1);
+        lista = (data ?? []) as Jogador[];
+      }
+
       const idsUnicos = new Set();
       const listaLimpa = lista.filter(item => {
         if (idsUnicos.has(item.id)) return false;
@@ -165,11 +209,17 @@ export default function RankingScreen() {
       const proxima = page + 1;
       const de = proxima * PAGE_SIZE;
       const ate = de + PAGE_SIZE - 1;
-      const { data } = await aplicarFiltros(
-        supabase.from('utilizadores').select('id, nome, xp_total, nivel, avatar_url')
-      ).range(de, ate);
-      const novos = (data ?? []) as Jogador[];
-      
+      let novos: (Jogador | EquipaRank)[];
+      if (activeTab === 'equipas') {
+        const { data } = await queryEquipas().range(de, ate);
+        novos = mapEquipas(data ?? []);
+      } else {
+        const { data } = await aplicarFiltros(
+          supabase.from('utilizadores').select('id, nome, xp_total, nivel, avatar_url')
+        ).range(de, ate);
+        novos = (data ?? []) as Jogador[];
+      }
+
       setRankingData((prev) => {
         const ids = new Set(prev.map((p) => p.id));
         return [...prev, ...novos.filter((n) => !ids.has(n.id))];
@@ -196,43 +246,76 @@ export default function RankingScreen() {
     return !!me && item.id === me.id;
   }
 
-  const renderItem = useCallback(({ item, index }: { item: Jogador; index: number }) => {
-    const eu = isMe(item);
+  const renderItem = useCallback(({ item, index }: { item: Jogador | EquipaRank; index: number }) => {
+    if (activeTab === 'equipas') {
+      const eq = item as EquipaRank;
+      const minha = !!minhaEquipa && eq.id === minhaEquipa.id;
+      return (
+        <View style={[styles.listItem, minha && styles.listHighlight]}>
+          <Text style={styles.listRankNumber}>#{index + 1}</Text>
+          <RankAvatar uri={eq.avatar_url} ini={eq.nome.substring(0, 2).toUpperCase()} colors={['#8ef6b5', '#5EFC44']} size={40} radius={14} fontSize={14} cardBg={colors.card} />
+          <View style={styles.listInfo}>
+            <View style={styles.listNameRow}>
+              <Text style={styles.listName} numberOfLines={1}>{eq.nome}</Text>
+              {minha && <View style={styles.badgeEu}><Text style={styles.badgeEuText}>Minha</Text></View>}
+            </View>
+            <Text style={styles.listXp}>{eq.num_membros} membro{eq.num_membros !== 1 ? 's' : ''} • {eq.xp_total ?? 0} XP</Text>
+          </View>
+        </View>
+      );
+    }
+    const jog = item as Jogador;
+    const eu = isMe(jog);
     return (
       <View style={[styles.listItem, eu && styles.listHighlight]}>
         <Text style={styles.listRankNumber}>#{index + 1}</Text>
-        <RankAvatar uri={item.avatar_url} ini={inicial(item.nome)} colors={['#50E3C2', '#0d9488']} size={40} radius={20} fontSize={16} />
+        <RankAvatar uri={jog.avatar_url} ini={inicial(jog.nome)} colors={['#50E3C2', '#0d9488']} size={40} radius={20} fontSize={16} cardBg={colors.card} />
         <View style={styles.listInfo}>
           <View style={styles.listNameRow}>
-            <Text style={styles.listName} numberOfLines={1}>{item.nome}</Text>
+            <Text style={styles.listName} numberOfLines={1}>{jog.nome}</Text>
             {eu && <View style={styles.badgeEu}><Text style={styles.badgeEuText}>Eu</Text></View>}
           </View>
-          <Text style={styles.listXp}>Nível {item.nivel ?? 1} • {item.xp_total ?? 0} XP</Text>
+          <Text style={styles.listXp}>Nível {jog.nivel ?? 1} • {jog.xp_total ?? 0} XP</Text>
         </View>
       </View>
     );
-  }, [me]);
+  }, [me, minhaEquipa, activeTab, styles, colors]);
 
   if (bootstrapping) {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </SafeAreaView>
     );
   }
 
-  const pertenceAoFiltroAtual = 
-    activeTab === 'global' || 
+  const pertenceAoFiltroAtual =
+    activeTab === 'global' ||
+    (activeTab === 'equipas' && !!minhaEquipa) ||
     (activeTab === 'escola' && me?.escola_id === selectedEscolaId) ||
     (activeTab === 'curso' && me?.curso_id === selectedCursoId);
 
-  const euJaNaLista = me ? rankingData.some((jogador) => jogador.id === me.id) : false;
+  const euJaNaLista = activeTab === 'equipas'
+    ? (minhaEquipa ? rankingData.some((item) => item.id === minhaEquipa.id) : false)
+    : (me ? rankingData.some((item) => item.id === me.id) : false);
   const showMeCard = pertenceAoFiltroAtual && minhaPosicao != null && !euJaNaLista;
 
-  const ListHeader = showMeCard && me ? (
+  const ListHeader = showMeCard && activeTab === 'equipas' && minhaEquipa ? (
     <View style={styles.meCard}>
       <Text style={styles.meRank}>#{minhaPosicao}</Text>
-      <RankAvatar uri={me.avatar_url} ini={inicial(me.nome)} colors={['#8ef6b5', '#5EFC44']} size={40} radius={20} fontSize={16} />
+      <RankAvatar uri={minhaEquipa.avatar_url} ini={minhaEquipa.nome.substring(0, 2).toUpperCase()} colors={['#8ef6b5', '#5EFC44']} size={40} radius={14} fontSize={14} cardBg={colors.card} />
+      <View style={styles.meInfo}>
+        <View style={styles.listNameRow}>
+          <Text style={styles.meName} numberOfLines={1}>{minhaEquipa.nome}</Text>
+          <View style={styles.badgeEu}><Text style={styles.badgeEuText}>Minha</Text></View>
+        </View>
+        <Text style={styles.listXp}>{minhaEquipa.num_membros} membro{minhaEquipa.num_membros !== 1 ? 's' : ''} • {minhaEquipa.xp_total ?? 0} XP</Text>
+      </View>
+    </View>
+  ) : showMeCard && me ? (
+    <View style={styles.meCard}>
+      <Text style={styles.meRank}>#{minhaPosicao}</Text>
+      <RankAvatar uri={me.avatar_url} ini={inicial(me.nome)} colors={['#8ef6b5', '#5EFC44']} size={40} radius={20} fontSize={16} cardBg={colors.card} />
       <View style={styles.meInfo}>
         <View style={styles.listNameRow}>
           <Text style={styles.meName} numberOfLines={1}>{primeiroNome(me.nome)}</Text>
@@ -247,20 +330,16 @@ export default function RankingScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.topNavbar}>
         <Text style={[styles.logoText, styles.glowText]}>GREEN LEAGUE</Text>
-        <TouchableOpacity style={styles.notificationBtn} activeOpacity={0.7}>
-          <MaterialCommunityIcons name="bell-outline" size={26} color={COLORS.textGray} />
-          <View style={styles.notificationDot} />
-        </TouchableOpacity>
       </View>
 
       <Text style={styles.pageTitle}>Ranking</Text>
 
       {/* Abas */}
       <View style={styles.tabsContainer}>
-        {(['global', 'escola', 'curso'] as Tab[]).map((t) => (
+        {(['global', 'escola', 'curso', 'equipas'] as Tab[]).map((t) => (
           <TouchableOpacity key={t} style={[styles.tabButton, activeTab === t && styles.tabActive]} onPress={() => setActiveTab(t)}>
             <Text style={[styles.tabText, activeTab === t && styles.tabTextActive]}>
-              {t === 'global' ? 'Global' : t === 'escola' ? 'Escola' : 'Curso'}
+              {t === 'global' ? 'Global' : t === 'escola' ? 'Escola' : t === 'curso' ? 'Curso' : 'Equipas'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -270,10 +349,10 @@ export default function RankingScreen() {
       {(activeTab === 'escola' || activeTab === 'curso') && (
         <View style={styles.filterWrapper}>
           <Text style={styles.selectorLabel}>Escolhe a escola</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={styles.scrollFiltros} 
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.scrollFiltros}
             contentContainerStyle={styles.chipsRow}
           >
             {escolas.map((e) => {
@@ -295,9 +374,9 @@ export default function RankingScreen() {
           {cursos.length === 0 ? (
             <Text style={styles.infoText}>Esta escola ainda não tem cursos registados.</Text>
           ) : (
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false} 
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
               style={styles.scrollFiltros}
               contentContainerStyle={styles.chipsRow}
             >
@@ -325,74 +404,75 @@ export default function RankingScreen() {
         showsVerticalScrollIndicator={false}
         onEndReached={carregarMais}
         onEndReachedThreshold={0.5}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={atualizar} tintColor={COLORS.primary} colors={[COLORS.primary]} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={atualizar} tintColor={colors.primary} colors={[colors.primary]} />}
         ListEmptyComponent={
           loadingFirst ? (
-            <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 20 }} />
+            <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 20 }} />
           ) : (
             <Text style={styles.emptyText}>Nenhuns dados registados para este ranking.</Text>
           )
         }
-        ListFooterComponent={loadingMore ? <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} /> : null}
+        ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 20 }} /> : null}
       />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  
-  topNavbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10 },
-  logoText: { fontSize: 22, fontWeight: '900', color: COLORS.primary, letterSpacing: 0.5, fontStyle: 'italic' },
-  glowText: { textShadowColor: COLORS.primary, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 },
-  notificationBtn: { position: 'relative', padding: 5 },
-  notificationDot: { position: 'absolute', top: 5, right: 5, width: 10, height: 10, backgroundColor: COLORS.secondary, borderRadius: 5, borderWidth: 2, borderColor: COLORS.background },
-  
-  pageTitle: { color: COLORS.primary, fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 },
+function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg },
 
-  tabsContainer: { flexDirection: 'row', backgroundColor: '#1E1E24', borderRadius: 30, padding: 4, marginHorizontal: 20, marginBottom: 12 },
-  tabButton: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 26 },
-  tabActive: { backgroundColor: COLORS.primary },
-  tabText: { color: COLORS.textGray, fontSize: 13, fontWeight: 'bold' },
-  tabTextActive: { color: '#000000' },
+    topNavbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10 },
+    logoText: { fontSize: 22, fontWeight: '900', color: c.primary, letterSpacing: 0.5, fontStyle: 'italic' },
+    glowText: { textShadowColor: c.primary, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 },
+    notificationBtn: { position: 'relative', padding: 5 },
+    notificationDot: { position: 'absolute', top: 5, right: 5, width: 10, height: 10, backgroundColor: c.secondary, borderRadius: 5, borderWidth: 2, borderColor: c.surface },
 
-  filterWrapper: { marginBottom: 12 }, // Um bocadinho mais de folga após o filtro
-  selectorLabel: { color: COLORS.textGray, fontSize: 13, fontWeight: '600', marginLeft: 20, marginBottom: 6 }, // Label ligeiramente maior
-  
-  // AUMENTADO: minHeight e maxHeight passaram de 32 para 40
-  scrollFiltros: { flexGrow: 0, minHeight: 40, maxHeight: 40 }, 
-  chipsRow: { paddingHorizontal: 20, gap: 10 }, 
-  
-  chip: { 
-    backgroundColor: COLORS.cardBg, 
-    paddingHorizontal: 16, 
-    height: 36, // AUMENTADO: de 30 para 36
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    borderRadius: 18, 
-    borderWidth: 1, 
-    borderColor: COLORS.border 
-  },
-  chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  chipText: { color: COLORS.textGray, fontWeight: 'bold', fontSize: 13 }, // AUMENTADO: de 12 para 13
-  chipTextActive: { color: '#000' },
-  
-  infoText: { color: COLORS.textGray, marginLeft: 20, fontSize: 13 },
-  emptyText: { color: COLORS.textGray, textAlign: 'center', marginTop: 30 },
+    pageTitle: { color: c.primary, fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 },
 
-  meCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(94, 252, 68, 0.06)', borderWidth: 1, borderColor: COLORS.primary, borderRadius: 16, padding: 12, marginBottom: 10 },
-  meRank: { color: COLORS.primary, fontSize: 15, fontWeight: '900', width: 38 },
-  meInfo: { flex: 1, marginLeft: 10 },
-  meName: { color: '#FFF', fontSize: 14, fontWeight: 'bold' },
+    tabsContainer: { flexDirection: 'row', backgroundColor: c.card, borderRadius: 30, padding: 4, marginHorizontal: 20, marginBottom: 12, borderWidth: 1, borderColor: c.border },
+    tabButton: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 26 },
+    tabActive: { backgroundColor: c.primary },
+    tabText: { color: c.textMuted, fontSize: 13, fontWeight: 'bold' },
+    tabTextActive: { color: '#000000' },
 
-  listContainer: { paddingHorizontal: 20, paddingBottom: 120 },
-  listItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.cardBg, borderRadius: 16, padding: 12, marginBottom: 8 },
-  listHighlight: { borderWidth: 1, borderColor: COLORS.primary, backgroundColor: 'rgba(94, 252, 68, 0.05)' },
-  listRankNumber: { color: '#666', fontSize: 15, fontWeight: '900', width: 38 },
-  listInfo: { flex: 1, marginLeft: 10 },
-  listNameRow: { flexDirection: 'row', alignItems: 'center' },
-  listName: { color: '#FFF', fontSize: 14, fontWeight: 'bold', flex: 1 },
-  badgeEu: { backgroundColor: 'rgba(94, 252, 68, 0.2)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 6 },
-  badgeEuText: { color: COLORS.primary, fontSize: 9, fontWeight: 'bold' },
-  listXp: { color: COLORS.textGray, fontSize: 11, marginTop: 2 }
-});
+    filterWrapper: { marginBottom: 12 },
+    selectorLabel: { color: c.textMuted, fontSize: 13, fontWeight: '600', marginLeft: 20, marginBottom: 6 },
+
+    scrollFiltros: { flexGrow: 0, minHeight: 40, maxHeight: 40 },
+    chipsRow: { paddingHorizontal: 20, gap: 10 },
+
+    chip: {
+      backgroundColor: c.card,
+      paddingHorizontal: 16,
+      height: 36,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: c.border
+    },
+    chipActive: { backgroundColor: c.primary, borderColor: c.primary },
+    chipText: { color: c.textMuted, fontWeight: 'bold', fontSize: 13 },
+    chipTextActive: { color: '#000' },
+
+    infoText: { color: c.textMuted, marginLeft: 20, fontSize: 13 },
+    emptyText: { color: c.textMuted, textAlign: 'center', marginTop: 30 },
+
+    meCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.primary + '10', borderWidth: 1, borderColor: c.primary + '44', borderRadius: 16, padding: 12, marginBottom: 10 },
+    meRank: { color: c.primary, fontSize: 15, fontWeight: '900', width: 38 },
+    meInfo: { flex: 1, marginLeft: 10 },
+    meName: { color: c.text, fontSize: 14, fontWeight: 'bold' },
+
+    listContainer: { paddingHorizontal: 20, paddingBottom: 120 },
+    listItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, borderRadius: 16, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: c.border },
+    listHighlight: { borderColor: c.primary, backgroundColor: c.primary + '0D' },
+    listRankNumber: { color: '#666', fontSize: 15, fontWeight: '900', width: 38 },
+    listInfo: { flex: 1, marginLeft: 10 },
+    listNameRow: { flexDirection: 'row', alignItems: 'center' },
+    listName: { color: c.text, fontSize: 14, fontWeight: 'bold', flex: 1 },
+    badgeEu: { backgroundColor: c.primary + '22', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 6, borderWidth: 1, borderColor: c.primary + '44' },
+    badgeEuText: { color: c.primary, fontSize: 9, fontWeight: 'bold' },
+    listXp: { color: c.textMuted, fontSize: 11, marginTop: 2 }
+  });
+}

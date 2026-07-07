@@ -1,24 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, Image, Modal } from 'react-native';
+import React, { useEffect, useState, useMemo } from 'react';
+import { StyleSheet, Text, View, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Platform, Image, Modal } from 'react-native';
 import { MaterialCommunityIcons, Ionicons, Feather } from '@expo/vector-icons';
 import { useRouter, useGlobalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../../src/lib/supabase';
-
-const COLORS = {
-  background: '#121214',
-  primary: '#5EFC44',
-  secondary: '#50E3C2',
-  water: '#3b82f6', // Cor para a badge da água
-  cardBg: '#1E1E24',
-  textLight: '#FFFFFF',
-  textGray: '#888888',
-  border: '#2A2A30'
-};
+import { useToast } from '../../components/ToastProvider';
+import { useTheme } from '../../components/ThemeProvider';
 
 export default function AdicionarAcaoScreen() {
   const router = useRouter();
-  // Parâmetros que a Home (ou outra tela) pode enviar para pré-selecionar destino.
+  const { showToast } = useToast();
+  const { colors } = useTheme();
   const params = useGlobalSearchParams<{ categoria?: string; acao?: string }>();
 
   const [loading, setLoading] = useState(true);
@@ -35,6 +27,8 @@ export default function AdicionarAcaoScreen() {
 
   const [showCameraOptions, setShowCameraOptions] = useState(false);
   const [fotoUri, setFotoUri] = useState<string | null>(null);
+
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   useEffect(() => {
     fetchDados();
@@ -79,7 +73,7 @@ export default function AdicionarAcaoScreen() {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permissão Negada', 'Precisamos de acesso à câmara para provar a tua ação!');
+        showToast({ type: 'warning', title: 'Permissão Negada', message: 'Precisamos de acesso à câmara para provar a tua ação!' });
         return;
       }
 
@@ -95,7 +89,7 @@ export default function AdicionarAcaoScreen() {
       }
     } catch (error) {
       console.log("Erro ao processar imagem:", error);
-      Alert.alert('Ops!', 'Não foi possível ler a fotografia.');
+      showToast({ type: 'error', message: 'Não foi possível ler a fotografia.' });
     }
   }
 
@@ -103,7 +97,7 @@ export default function AdicionarAcaoScreen() {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permissão Negada', 'Precisamos de acesso à galeria para escolheres a foto!');
+        showToast({ type: 'warning', title: 'Permissão Negada', message: 'Precisamos de acesso à galeria para escolheres a foto!' });
         return;
       }
 
@@ -119,7 +113,7 @@ export default function AdicionarAcaoScreen() {
       }
     } catch (error) {
       console.log("Erro ao processar imagem:", error);
-      Alert.alert('Ops!', 'Não foi possível carregar a imagem.');
+      showToast({ type: 'error', message: 'Não foi possível carregar a imagem.' });
     }
   }
 
@@ -136,7 +130,7 @@ export default function AdicionarAcaoScreen() {
 
   async function handleSubmeter() {
     if (!fotoUri) {
-      Alert.alert('Falta a Prova!', 'Por favor, tira uma foto ou escolhe da galeria.');
+      showToast({ type: 'warning', title: 'Falta a Prova!', message: 'Por favor, tira uma foto ou escolhe da galeria.' });
       return;
     }
 
@@ -144,12 +138,20 @@ export default function AdicionarAcaoScreen() {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
-      Alert.alert('Erro', 'Sessão expirada. Faz login novamente.');
+      showToast({ type: 'error', message: 'Sessão expirada. Faz login novamente.' });
       setSubmitting(false);
       return;
     }
 
     try {
+      // Verificar se a aprovação é automática
+      const { data: config } = await supabase
+        .from('configuracoes')
+        .select('valor')
+        .eq('chave', 'aprovacao_automatica')
+        .single();
+      const aprovacaoAutomatica = !config || config.valor === 'true';
+
       const fileExt = fotoUri.split('.').pop() || 'jpg';
       const fileName = `${user.id}_${Date.now()}.${fileExt}`;
 
@@ -168,54 +170,56 @@ export default function AdicionarAcaoScreen() {
         .from('provas_acoes')
         .getPublicUrl(fileName);
 
-      // 1. Cálculos de XP, CO2 e Água
       const totalXp = selectedAcao.xp_base * quantidade;
       const totalCo2 = selectedAcao.co2_estimado ? selectedAcao.co2_estimado * quantidade : 0;
       const totalAgua = selectedAcao.agua_estimada ? selectedAcao.agua_estimada * quantidade : 0;
+      const estado = aprovacaoAutomatica ? 'aprovado' : 'pendente';
 
-      // 2. Inserir submissão com os novos valores
       const { error: insertError } = await supabase.from('submissoes_acao').insert({
         utilizador_id: user.id,
         acao_id: selectedAcao.id,
         quantidade: quantidade,
         descricao_user: descricao,
         foto_url: publicUrl,
-        estado: 'aprovado',
+        estado,
         xp_atribuido: totalXp,
         co2_atribuido: totalCo2,
-        agua_atribuida: totalAgua
+        agua_atribuida: totalAgua,
+        ...(aprovacaoAutomatica ? { validado_em: new Date().toISOString() } : {}),
       });
 
       if (insertError) throw insertError;
 
-      // 3. Atualizar saldos totais do Perfil do Utilizador
-      const { data: profile } = await supabase
-        .from('utilizadores')
-        .select('xp_total, co2_poupado, agua_poupada')
-        .eq('id', user.id)
-        .single();
+      // Só atualiza XP se aprovado automaticamente
+      if (aprovacaoAutomatica) {
+        const { data: profile } = await supabase
+          .from('utilizadores')
+          .select('xp_total, co2_poupado, agua_poupada')
+          .eq('id', user.id)
+          .single();
 
-      if (profile) {
-        const novoXp = (profile.xp_total || 0) + totalXp;
-        const novoCo2 = Number(profile.co2_poupado || 0) + totalCo2;
-        const novoAgua = Number(profile.agua_poupada || 0) + totalAgua;
-
-        await supabase.from('utilizadores').update({ 
-          xp_total: novoXp,
-          co2_poupado: novoCo2,
-          agua_poupada: novoAgua
-        }).eq('id', user.id);
+        if (profile) {
+          await supabase.from('utilizadores').update({
+            xp_total: (profile.xp_total || 0) + totalXp,
+            co2_poupado: Number(profile.co2_poupado || 0) + totalCo2,
+            agua_poupada: Number(profile.agua_poupada || 0) + totalAgua,
+          }).eq('id', user.id);
+        }
       }
 
       setSubmitting(false);
       resetFormulario();
-      Alert.alert('Sucesso! 🌱', `Ação registada! Ganhaste +${totalXp} XP.`, [
-        { text: 'Incrível', onPress: () => router.push('/(tabs)/home') }
-      ]);
+
+      if (aprovacaoAutomatica) {
+        showToast({ type: 'success', title: 'Ação registada!', message: `Ganhaste +${totalXp} XP. Continua assim!` });
+      } else {
+        showToast({ type: 'info', title: 'Ação submetida!', message: 'A tua ação está a aguardar aprovação do administrador.' });
+      }
+      router.push('/(tabs)/home');
 
     } catch (error) {
       console.log("Erro no Upload:", error);
-      Alert.alert('Erro no Upload', 'Ocorreu um problema a enviar a tua prova para o servidor.');
+      showToast({ type: 'error', title: 'Erro no Upload', message: 'Ocorreu um problema a enviar a tua prova para o servidor.' });
       setSubmitting(false);
     }
   }
@@ -223,14 +227,14 @@ export default function AdicionarAcaoScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   const acoesFiltradas = acoes.filter(a => a.categoria_id === activeCatId);
   const categoriaModal = selectedAcao ? categorias.find(c => c.id === selectedAcao.categoria_id) : null;
-  
+
   // Valores para mostrar no ecrã de revisão
   const totalXpModal = selectedAcao ? selectedAcao.xp_base * quantidade : 0;
   const totalCo2Modal = selectedAcao && selectedAcao.co2_estimado ? (selectedAcao.co2_estimado * quantidade).toFixed(2) : 0;
@@ -249,10 +253,10 @@ export default function AdicionarAcaoScreen() {
           {categorias.map((cat) => (
             <TouchableOpacity
               key={cat.id}
-              style={[styles.catTab, activeCatId === cat.id && { backgroundColor: cat.cor_hex || COLORS.primary }]}
+              style={[styles.catTab, activeCatId === cat.id && { backgroundColor: cat.cor_hex || colors.primary }]}
               onPress={() => setActiveCatId(cat.id)}
             >
-              <MaterialCommunityIcons name={cat.icon_url || 'leaf'} size={20} color={activeCatId === cat.id ? '#000' : COLORS.textGray} />
+              <MaterialCommunityIcons name={cat.icon_url || 'leaf'} size={20} color={activeCatId === cat.id ? '#000' : colors.textMuted} />
               <Text style={[styles.catText, activeCatId === cat.id && { color: '#000' }]}>{cat.nome}</Text>
             </TouchableOpacity>
           ))}
@@ -277,7 +281,7 @@ export default function AdicionarAcaoScreen() {
               <View style={styles.xpBadge}>
                 <Text style={styles.xpText}>{acao.xp_base} XP / {acao.unidade_medida}</Text>
               </View>
-              <Feather name="chevron-right" size={20} color={COLORS.textGray} style={{ marginLeft: 10 }} />
+              <Feather name="chevron-right" size={20} color={colors.textMuted} style={{ marginLeft: 10 }} />
             </TouchableOpacity>
           ))
         )}
@@ -287,7 +291,7 @@ export default function AdicionarAcaoScreen() {
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.formHeader}>
             <TouchableOpacity onPress={resetFormulario} style={styles.backButton}>
-              <Ionicons name="arrow-down" size={24} color="#FFF" />
+              <Ionicons name="arrow-down" size={24} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.formHeaderTitle}>Registar Ação</Text>
             <View style={{ width: 24 }} />
@@ -296,31 +300,31 @@ export default function AdicionarAcaoScreen() {
           <ScrollView contentContainerStyle={styles.formContent} showsVerticalScrollIndicator={false}>
 
             {selectedAcao && (
-              <View style={[styles.selectedCard, { borderColor: categoriaModal?.cor_hex || COLORS.primary }]}>
-                <MaterialCommunityIcons name={categoriaModal?.icon_url || 'leaf'} size={40} color={categoriaModal?.cor_hex || COLORS.primary} />
+              <View style={[styles.selectedCard, { borderColor: categoriaModal?.cor_hex || colors.primary }]}>
+                <MaterialCommunityIcons name={categoriaModal?.icon_url || 'leaf'} size={40} color={categoriaModal?.cor_hex || colors.primary} />
                 <Text style={styles.selectedTitle}>{selectedAcao.titulo}</Text>
 
                 <View style={styles.quantityContainer}>
                   <TouchableOpacity onPress={handleDecrement} style={styles.qtyButton}>
-                    <Feather name="minus" size={24} color="#FFF" />
+                    <Feather name="minus" size={24} color={colors.text} />
                   </TouchableOpacity>
                   <View style={styles.qtyValueContainer}>
                     <Text style={styles.qtyValue}>{quantidade}</Text>
                     <Text style={styles.qtyUnit}>{selectedAcao.unidade_medida || 'unidades'}</Text>
                   </View>
                   <TouchableOpacity onPress={handleIncrement} style={styles.qtyButton}>
-                    <Feather name="plus" size={24} color="#FFF" />
+                    <Feather name="plus" size={24} color={colors.text} />
                   </TouchableOpacity>
                 </View>
 
                 {/* Resumo Dinâmico (XP, CO2, Água) COM A CORREÇÃO DO TERNÁRIO */}
                 <View style={styles.selectedBadges}>
                   <Text style={styles.badgeXp}>+{totalXpModal} XP</Text>
-                  
+
                   {selectedAcao.co2_estimado ? (
                     <Text style={styles.badgeCo2}>-{totalCo2Modal}kg CO₂</Text>
                   ) : null}
-                  
+
                   {selectedAcao.agua_estimada ? (
                     <Text style={styles.badgeAgua}>-{totalAguaModal}L Água</Text>
                   ) : null}
@@ -332,7 +336,7 @@ export default function AdicionarAcaoScreen() {
             <TextInput
               style={styles.textInput}
               placeholder="Adiciona detalhes sobre a tua ação..."
-              placeholderTextColor={COLORS.textGray}
+              placeholderTextColor={colors.placeholderText}
               multiline
               numberOfLines={4}
               value={descricao}
@@ -348,19 +352,19 @@ export default function AdicionarAcaoScreen() {
                   onPress={() => setShowCameraOptions(true)}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="camera-outline" size={40} color={COLORS.textGray} />
+                  <Ionicons name="camera-outline" size={40} color={colors.textMuted} />
                   <Text style={styles.cameraText}>Adicionar Prova Fotográfica</Text>
                   <Text style={styles.cameraSubtext}>Clica para escolheres o método</Text>
                 </TouchableOpacity>
               ) : (
                 <View style={styles.cameraOptionsContainer}>
                   <TouchableOpacity style={styles.cameraOptionBtn} onPress={handleTirarFoto}>
-                    <Ionicons name="camera" size={32} color={COLORS.primary} />
+                    <Ionicons name="camera" size={32} color={colors.primary} />
                     <Text style={styles.cameraOptionText}>Tirar Foto</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity style={styles.cameraOptionBtn} onPress={handleAbrirGaleria}>
-                    <Ionicons name="images" size={32} color={COLORS.secondary} />
+                    <Ionicons name="images" size={32} color={colors.secondary} />
                     <Text style={styles.cameraOptionText}>Abrir Galeria</Text>
                   </TouchableOpacity>
                 </View>
@@ -382,11 +386,11 @@ export default function AdicionarAcaoScreen() {
             {showCameraOptions && fotoUri && (
               <View style={[styles.cameraOptionsContainer, { marginTop: 15 }]}>
                 <TouchableOpacity style={styles.cameraOptionBtn} onPress={handleTirarFoto}>
-                  <Ionicons name="camera" size={24} color={COLORS.primary} />
+                  <Ionicons name="camera" size={24} color={colors.primary} />
                   <Text style={styles.cameraOptionText}>Nova Foto</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.cameraOptionBtn} onPress={handleAbrirGaleria}>
-                  <Ionicons name="images" size={24} color={COLORS.secondary} />
+                  <Ionicons name="images" size={24} color={colors.secondary} />
                   <Text style={styles.cameraOptionText}>Galeria</Text>
                 </TouchableOpacity>
               </View>
@@ -410,52 +414,54 @@ export default function AdicionarAcaoScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  modalContainer: { flex: 1, backgroundColor: COLORS.background },
-  header: { padding: 20, paddingTop: 30, paddingBottom: 15 },
-  headerTitle: { color: COLORS.primary, fontSize: 28, fontWeight: 'bold' },
-  headerSubtitle: { color: COLORS.textGray, fontSize: 14, marginTop: 4 },
-  categoriesWrapper: { paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  categoriesScroll: { paddingHorizontal: 20, gap: 10 },
-  catTab: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.cardBg, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, gap: 6 },
-  catText: { color: COLORS.textGray, fontWeight: 'bold', fontSize: 14 },
-  listContent: { padding: 20, paddingBottom: 120 },
-  emptyText: { color: COLORS.textGray, textAlign: 'center', marginTop: 40 },
-  actionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.cardBg, borderRadius: 20, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border },
-  actionInfo: { flex: 1, marginRight: 10 },
-  actionTitle: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
-  actionDesc: { color: COLORS.textGray, fontSize: 12 },
-  xpBadge: { backgroundColor: 'rgba(94, 252, 68, 0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: COLORS.primary },
-  xpText: { color: COLORS.primary, fontWeight: 'bold', fontSize: 11, textAlign: 'center' },
-  formHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: Platform.OS === 'ios' ? 20 : 30, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  backButton: { padding: 5 },
-  formHeaderTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
-  formContent: { padding: 20, paddingBottom: 150 },
-  selectedCard: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 20, padding: 20, marginBottom: 25, borderWidth: 1 },
-  selectedTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold', marginTop: 15, marginBottom: 15, textAlign: 'center' },
-  quantityContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.background, borderRadius: 16, padding: 8, marginBottom: 20, borderWidth: 1, borderColor: COLORS.border },
-  qtyButton: { backgroundColor: COLORS.cardBg, padding: 12, borderRadius: 12 },
-  qtyValueContainer: { paddingHorizontal: 25, alignItems: 'center' },
-  qtyValue: { color: '#FFF', fontSize: 24, fontWeight: 'bold' },
-  qtyUnit: { color: COLORS.textGray, fontSize: 12, marginTop: 2, textTransform: 'uppercase' },
-  selectedBadges: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', justifyContent: 'center' },
-  badgeXp: { backgroundColor: COLORS.primary, color: '#000', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, fontWeight: 'bold', overflow: 'hidden' },
-  badgeCo2: { backgroundColor: COLORS.secondary, color: '#000', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, fontWeight: 'bold', overflow: 'hidden' },
-  badgeAgua: { backgroundColor: COLORS.water, color: '#FFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, fontWeight: 'bold', overflow: 'hidden' },
-  label: { color: '#FFF', fontSize: 14, fontWeight: 'bold', marginBottom: 10, marginLeft: 4 },
-  textInput: { backgroundColor: COLORS.cardBg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, color: '#FFF', padding: 15, fontSize: 14, minHeight: 100, textAlignVertical: 'top', marginBottom: 25 },
-  cameraButton: { backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 2, borderColor: COLORS.border, borderStyle: 'dashed', borderRadius: 20, padding: 30, alignItems: 'center', justifyContent: 'center', marginBottom: 30 },
-  cameraText: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginTop: 10 },
-  cameraSubtext: { color: COLORS.textGray, fontSize: 12, marginTop: 4 },
-  cameraOptionsContainer: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, marginBottom: 30 },
-  cameraOptionBtn: { flex: 1, backgroundColor: COLORS.cardBg, borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, padding: 25, alignItems: 'center', justifyContent: 'center' },
-  cameraOptionText: { color: '#FFF', fontSize: 14, fontWeight: 'bold', marginTop: 10 },
-  previewContainer: { borderRadius: 16, overflow: 'hidden', marginBottom: 15, borderWidth: 1, borderColor: COLORS.border },
-  previewImage: { width: '100%', height: 200, resizeMode: 'cover' },
-  previewOverlay: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.7)', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, gap: 6 },
-  previewOverlayText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
-  fixedBottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: COLORS.background, padding: 20, borderTopWidth: 1, borderTopColor: COLORS.border, paddingBottom: Platform.OS === 'ios' ? 40 : 25 },
-  submitBtn: { backgroundColor: COLORS.primary, paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
-  submitBtnText: { color: '#000', fontSize: 16, fontWeight: 'bold' }
-});
+function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg },
+    modalContainer: { flex: 1, backgroundColor: c.bg },
+    header: { padding: 20, paddingTop: 30, paddingBottom: 15 },
+    headerTitle: { color: c.primary, fontSize: 28, fontWeight: 'bold' },
+    headerSubtitle: { color: c.textMuted, fontSize: 14, marginTop: 4 },
+    categoriesWrapper: { paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: c.border },
+    categoriesScroll: { paddingHorizontal: 20, gap: 10 },
+    catTab: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: c.border, gap: 6 },
+    catText: { color: c.textMuted, fontWeight: 'bold', fontSize: 14 },
+    listContent: { padding: 20, paddingBottom: 120 },
+    emptyText: { color: c.textMuted, textAlign: 'center', marginTop: 40 },
+    actionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, borderRadius: 20, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: c.border },
+    actionInfo: { flex: 1, marginRight: 10 },
+    actionTitle: { color: c.text, fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
+    actionDesc: { color: c.textMuted, fontSize: 12 },
+    xpBadge: { backgroundColor: 'rgba(94, 252, 68, 0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: c.primary },
+    xpText: { color: c.primary, fontWeight: 'bold', fontSize: 11, textAlign: 'center' },
+    formHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: Platform.OS === 'ios' ? 20 : 30, borderBottomWidth: 1, borderBottomColor: c.border },
+    backButton: { padding: 5 },
+    formHeaderTitle: { color: c.text, fontSize: 18, fontWeight: 'bold' },
+    formContent: { padding: 20, paddingBottom: 150 },
+    selectedCard: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 20, padding: 20, marginBottom: 25, borderWidth: 1 },
+    selectedTitle: { color: c.text, fontSize: 18, fontWeight: 'bold', marginTop: 15, marginBottom: 15, textAlign: 'center' },
+    quantityContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.bg, borderRadius: 16, padding: 8, marginBottom: 20, borderWidth: 1, borderColor: c.border },
+    qtyButton: { backgroundColor: c.card, padding: 12, borderRadius: 12 },
+    qtyValueContainer: { paddingHorizontal: 25, alignItems: 'center' },
+    qtyValue: { color: c.text, fontSize: 24, fontWeight: 'bold' },
+    qtyUnit: { color: c.textMuted, fontSize: 12, marginTop: 2, textTransform: 'uppercase' },
+    selectedBadges: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', justifyContent: 'center' },
+    badgeXp: { backgroundColor: c.primary, color: '#000', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, fontWeight: 'bold', overflow: 'hidden' },
+    badgeCo2: { backgroundColor: c.secondary, color: '#000', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, fontWeight: 'bold', overflow: 'hidden' },
+    badgeAgua: { backgroundColor: '#3b82f6', color: '#FFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, fontWeight: 'bold', overflow: 'hidden' },
+    label: { color: c.text, fontSize: 14, fontWeight: 'bold', marginBottom: 10, marginLeft: 4 },
+    textInput: { backgroundColor: c.inputBg, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 16, color: c.text, padding: 15, fontSize: 14, minHeight: 100, textAlignVertical: 'top', marginBottom: 25 },
+    cameraButton: { backgroundColor: 'rgba(255,255,255,0.02)', borderWidth: 2, borderColor: c.border, borderStyle: 'dashed', borderRadius: 20, padding: 30, alignItems: 'center', justifyContent: 'center', marginBottom: 30 },
+    cameraText: { color: c.text, fontSize: 16, fontWeight: 'bold', marginTop: 10 },
+    cameraSubtext: { color: c.textMuted, fontSize: 12, marginTop: 4 },
+    cameraOptionsContainer: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, marginBottom: 30 },
+    cameraOptionBtn: { flex: 1, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 16, padding: 25, alignItems: 'center', justifyContent: 'center' },
+    cameraOptionText: { color: c.text, fontSize: 14, fontWeight: 'bold', marginTop: 10 },
+    previewContainer: { borderRadius: 16, overflow: 'hidden', marginBottom: 15, borderWidth: 1, borderColor: c.border },
+    previewImage: { width: '100%', height: 200, resizeMode: 'cover' },
+    previewOverlay: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.7)', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, gap: 6 },
+    previewOverlayText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
+    fixedBottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: c.surface, padding: 20, borderTopWidth: 1, borderTopColor: c.border, paddingBottom: Platform.OS === 'ios' ? 40 : 25 },
+    submitBtn: { backgroundColor: c.primary, paddingVertical: 18, borderRadius: 16, alignItems: 'center' },
+    submitBtnText: { color: '#000', fontSize: 16, fontWeight: 'bold' }
+  });
+}
