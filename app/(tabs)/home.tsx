@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,16 +14,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
-
-const COLORS = {
-  background: '#121214',
-  primary: '#5EFC44',
-  secondary: '#50E3C2',
-  cardBg: '#1E1E24',
-  textLight: '#FFFFFF',
-  textGray: '#888888',
-  border: '#2A2A30',
-};
+import { useTheme } from '../../components/ThemeProvider';
 
 // ============================================================
 // Tipos
@@ -189,10 +180,10 @@ async function obterDadosHome(userId: string): Promise<DadosHome> {
   };
 }
 
-function IconeCategoria({ categoria }: { categoria: CategoriaRapida }) {
-  const cor = categoria.cor_hex || COLORS.primary;
+function IconeCategoria({ categoria, colors }: { categoria: CategoriaRapida; colors: ReturnType<typeof useTheme>['colors'] }) {
+  const cor = categoria.cor_hex || colors.primary;
   if (isUrl(categoria.icon_url)) {
-    return <Image source={{ uri: categoria.icon_url! }} style={styles.actionImg} />;
+    return <Image source={{ uri: categoria.icon_url! }} style={{ width: 32, height: 32, resizeMode: 'contain' }} />;
   }
   const nome = (categoria.icon_url || 'leaf') as keyof typeof MaterialCommunityIcons.glyphMap;
   return <MaterialCommunityIcons name={nome} size={32} color={cor} />;
@@ -203,6 +194,8 @@ function IconeCategoria({ categoria }: { categoria: CategoriaRapida }) {
 // ============================================================
 export default function HomeScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -240,7 +233,7 @@ export default function HomeScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.centro]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -248,7 +241,7 @@ export default function HomeScreen() {
   if (erro || !dados?.perfil) {
     return (
       <View style={[styles.container, styles.centro]}>
-        <Ionicons name="cloud-offline-outline" size={48} color={COLORS.textGray} />
+        <Ionicons name="cloud-offline-outline" size={48} color={colors.textMuted} />
         <Text style={styles.erroTexto}>{erro ?? 'Perfil não encontrado.'}</Text>
         <TouchableOpacity style={styles.botao} onPress={carregar}>
           <Text style={styles.botaoTexto}>Tentar novamente</Text>
@@ -263,24 +256,20 @@ export default function HomeScreen() {
   // AQUI: Lógica exata e simples a ler da Base de Dados
   const nivel = perfil.nivel;
   const xpAtual = perfil.xp_total;
-  const xpObjetivo = nivel * 1000; 
+  const xpObjetivo = nivel * 1000;
   const progressoPercentagem = Math.min((xpAtual / xpObjetivo) * 100, 100);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topNavbar}>
         <Text style={[styles.logoText, styles.glowText]}>GREEN LEAGUE</Text>
-        <TouchableOpacity style={styles.notificationBtn} activeOpacity={0.7}>
-          <MaterialCommunityIcons name="bell-outline" size={26} color={COLORS.textGray} />
-          <View style={styles.notificationDot} />
-        </TouchableOpacity>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={atualizar} tintColor={COLORS.primary} colors={[COLORS.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={atualizar} tintColor={colors.primary} colors={[colors.primary]} />
         }
       >
         <View style={styles.profileSection}>
@@ -323,7 +312,7 @@ export default function HomeScreen() {
             />
           </View>
           <View style={styles.co2Row}>
-            <MaterialCommunityIcons name="molecule-co2" size={16} color={COLORS.secondary} />
+            <MaterialCommunityIcons name="molecule-co2" size={16} color={colors.secondary} />
             <Text style={styles.co2Text}>
               {perfil.co2_poupado.toLocaleString('pt-PT', { maximumFractionDigits: 1 })} kg de CO₂ poupados
             </Text>
@@ -341,7 +330,7 @@ export default function HomeScreen() {
                   activeOpacity={0.7}
                   onPress={() => router.push({ pathname: '/adicionar-acao', params: { categoria: String(cat.id) } })}
                 >
-                  <IconeCategoria categoria={cat} />
+                  <IconeCategoria categoria={cat} colors={colors} />
                   <Text style={styles.actionText} numberOfLines={1}>
                     {cat.nome}
                   </Text>
@@ -355,7 +344,7 @@ export default function HomeScreen() {
           <>
             <Text style={styles.sectionTitle}>Ações sugeridas</Text>
             {sugestoes.map((acao) => {
-              const cor = acao.categoria?.cor_hex || COLORS.primary;
+              const cor = acao.categoria?.cor_hex || colors.primary;
               return (
                 <TouchableOpacity
                   key={acao.id}
@@ -386,7 +375,7 @@ export default function HomeScreen() {
           <Text style={styles.vazioComunidade}>Ainda não há atividade. Sê o primeiro!</Text>
         ) : (
           comunidade.map((item) => {
-            const cor = item.acao?.categoria?.cor_hex || COLORS.primary;
+            const cor = item.acao?.categoria?.cor_hex || colors.primary;
             const nome = item.utilizador?.nome ?? 'Estudante';
             return (
               <View key={item.id} style={styles.missionCard}>
@@ -411,54 +400,56 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  centro: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
-  content: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 130 },
+function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg },
+    centro: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+    content: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 130 },
 
-  topNavbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  logoText: { fontSize: 22, fontWeight: '900', color: COLORS.primary, letterSpacing: 0.5, fontStyle: 'italic' },
-  glowText: { textShadowColor: COLORS.primary, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 },
-  notificationBtn: { position: 'relative', padding: 5 },
-  notificationDot: { position: 'absolute', top: 5, right: 5, width: 10, height: 10, backgroundColor: COLORS.secondary, borderRadius: 5, borderWidth: 2, borderColor: COLORS.background },
+    topNavbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: c.border },
+    logoText: { fontSize: 22, fontWeight: '900', color: c.primary, letterSpacing: 0.5, fontStyle: 'italic' },
+    glowText: { textShadowColor: c.primary, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 },
+    notificationBtn: { position: 'relative', padding: 5 },
+    notificationDot: { position: 'absolute', top: 5, right: 5, width: 10, height: 10, backgroundColor: c.secondary, borderRadius: 5, borderWidth: 2, borderColor: c.surface },
 
-  profileSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25, marginTop: 15 },
-  greetingText: { color: COLORS.textLight, fontSize: 28, fontWeight: 'bold' },
-  streakContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  streakText: { color: COLORS.textGray, fontSize: 15 },
-  fireEmoji: { fontSize: 15 },
+    profileSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25, marginTop: 15 },
+    greetingText: { color: c.text, fontSize: 28, fontWeight: 'bold' },
+    streakContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+    streakText: { color: c.textMuted, fontSize: 15 },
+    fireEmoji: { fontSize: 15 },
 
-  avatarBox: { width: 65, height: 65, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
-  avatarLetter: { color: '#000000', fontSize: 30, fontWeight: '900' },
+    avatarBox: { width: 65, height: 65, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: c.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
+    avatarLetter: { color: '#000000', fontSize: 30, fontWeight: '900' },
 
-  xpSection: { marginBottom: 35 },
-  xpHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  levelText: { color: COLORS.textGray, fontSize: 15, fontWeight: '600' },
-  xpNumbers: { color: COLORS.primary, fontSize: 15, fontWeight: 'bold' },
-  progressBarBg: { height: 10, backgroundColor: COLORS.cardBg, borderRadius: 5, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
-  progressBarFill: { height: '100%', borderRadius: 5 },
-  co2Row: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  co2Text: { color: COLORS.textGray, fontSize: 13, marginLeft: 6 },
+    xpSection: { marginBottom: 35 },
+    xpHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+    levelText: { color: c.textMuted, fontSize: 15, fontWeight: '600' },
+    xpNumbers: { color: c.primary, fontSize: 15, fontWeight: 'bold' },
+    progressBarBg: { height: 10, backgroundColor: c.card, borderRadius: 5, overflow: 'hidden', borderWidth: 1, borderColor: c.border },
+    progressBarFill: { height: '100%', borderRadius: 5 },
+    co2Row: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+    co2Text: { color: c.textMuted, fontSize: 13, marginLeft: 6 },
 
-  sectionTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold', marginBottom: 15 },
+    sectionTitle: { color: c.text, fontSize: 20, fontWeight: 'bold', marginBottom: 15 },
 
-  quickActionsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 35 },
-  actionSquare: { width: '23%', aspectRatio: 1, backgroundColor: COLORS.cardBg, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4 },
-  actionText: { color: COLORS.textGray, fontSize: 12, fontWeight: '600', marginTop: 8 },
-  actionImg: { width: 32, height: 32, resizeMode: 'contain' },
+    quickActionsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 35 },
+    actionSquare: { width: '23%', aspectRatio: 1, backgroundColor: c.card, borderRadius: 16, borderWidth: 1, borderColor: c.border, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4 },
+    actionText: { color: c.textMuted, fontSize: 12, fontWeight: '600', marginTop: 8 },
+    actionImg: { width: 32, height: 32, resizeMode: 'contain' },
 
-  missionCard: { flexDirection: 'row', backgroundColor: COLORS.cardBg, borderRadius: 20, padding: 20, marginBottom: 15, borderWidth: 1, borderColor: COLORS.border },
-  missionIconBox: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginRight: 15, borderWidth: 1 },
-  missionContent: { flex: 1, justifyContent: 'center' },
-  missionTitle: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
-  missionDesc: { color: COLORS.textGray, fontSize: 13, marginBottom: 10 },
-  missionReward: { color: COLORS.primary, fontSize: 14, fontWeight: 'bold' },
+    missionCard: { flexDirection: 'row', backgroundColor: c.card, borderRadius: 20, padding: 20, marginBottom: 15, borderWidth: 1, borderColor: c.border },
+    missionIconBox: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginRight: 15, borderWidth: 1 },
+    missionContent: { flex: 1, justifyContent: 'center' },
+    missionTitle: { color: c.text, fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
+    missionDesc: { color: c.textMuted, fontSize: 13, marginBottom: 10 },
+    missionReward: { color: c.primary, fontSize: 14, fontWeight: 'bold' },
 
-  comunidadeAvatar: { width: 50, height: 50, borderRadius: 25, marginRight: 15, backgroundColor: COLORS.cardBg },
-  comunidadeTempo: { color: COLORS.textGray, fontSize: 12 },
-  vazioComunidade: { color: COLORS.textGray, fontSize: 14, marginBottom: 15 },
+    comunidadeAvatar: { width: 50, height: 50, borderRadius: 25, marginRight: 15, backgroundColor: c.card },
+    comunidadeTempo: { color: c.textMuted, fontSize: 12 },
+    vazioComunidade: { color: c.textMuted, fontSize: 14, marginBottom: 15 },
 
-  erroTexto: { color: COLORS.textGray, fontSize: 14, textAlign: 'center', marginTop: 14, lineHeight: 20 },
-  botao: { marginTop: 20, backgroundColor: COLORS.primary, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12 },
-  botaoTexto: { color: '#0A0A0A', fontWeight: '700', fontSize: 15 },
-});
+    erroTexto: { color: c.textMuted, fontSize: 14, textAlign: 'center', marginTop: 14, lineHeight: 20 },
+    botao: { marginTop: 20, backgroundColor: c.primary, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12 },
+    botaoTexto: { color: '#0A0A0A', fontWeight: '700', fontSize: 15 },
+  });
+}

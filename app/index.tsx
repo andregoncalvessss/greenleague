@@ -35,25 +35,12 @@ export default function LoginScreen() {
       return;
     }
 
-    const user = loginData.user;
-    const { data: perfil, error: perfilError } = await supabase
-      .from('utilizadores')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
     setLoading(false);
 
-    if (perfilError) {
-      showToast({ type: 'error', message: 'Não foi possível carregar o perfil.' });
-      return;
-    }
-
-    if (perfil?.role === 'admin') {
-      router.replace('/backoffice');
-    } else {
-      router.replace('/home');
-    }
+    // O login na app leva sempre à aplicação (home), inclusive para admins.
+    // O backoffice é acedido separadamente pelo URL /backoffice, protegido pelo
+    // guard que verifica a role de administrador.
+    router.replace('/home');
   }
 
   return (

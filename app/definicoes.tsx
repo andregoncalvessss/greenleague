@@ -239,13 +239,12 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#121214', '#1A1A2E', '#0D2B1D']} style={StyleSheet.absoluteFillObject} />
       <SafeAreaView style={{ flex: 1 }}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
 
           <View style={styles.topBar}>
             <TouchableOpacity style={styles.iconCircle} onPress={() => router.back()}>
-              <Ionicons name="arrow-back" size={22} color="#FFF" />
+              <Ionicons name="arrow-back" size={22} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.topTitle}>Definições</Text>
             <View style={{ width: 45 }} />
@@ -255,12 +254,19 @@ export default function SettingsScreen() {
 
             {/* FOTO */}
             <View style={styles.avatarWrap}>
-              <View style={styles.avatarBox}>
-                {avatarUrl ? (
-                  <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" />
-                ) : (
-                  <Text style={styles.avatarText}>{nome ? nome.charAt(0).toUpperCase() : '?'}</Text>
-                )}
+              <View style={[styles.avatarRing, { borderColor: colors.primary + '55', backgroundColor: colors.primary + '15' }]}>
+                <View style={styles.avatarBox}>
+                  {avatarUrl ? (
+                    <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" />
+                  ) : (
+                    <LinearGradient
+                      colors={isDark ? ['#5EFC44', '#22C55E'] : [colors.primary, colors.secondary]}
+                      style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+                    >
+                      <Text style={styles.avatarText}>{nome ? nome.charAt(0).toUpperCase() : '?'}</Text>
+                    </LinearGradient>
+                  )}
+                </View>
               </View>
               <TouchableOpacity style={styles.changePhotoBtn} onPress={handleChangePhoto} disabled={uploadingFoto}>
                 {uploadingFoto
@@ -270,7 +276,10 @@ export default function SettingsScreen() {
             </View>
 
             {/* APARÊNCIA */}
-            <Text style={styles.sectionTitle}>Aparência</Text>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="color-palette-outline" size={16} color={colors.primary} />
+              <Text style={styles.sectionTitle}>Aparência</Text>
+            </View>
             <View style={styles.card}>
               <View style={styles.themeRow}>
                 <Ionicons
@@ -289,7 +298,10 @@ export default function SettingsScreen() {
             </View>
 
             {/* DADOS PESSOAIS */}
-            <Text style={styles.sectionTitle}>Dados Pessoais</Text>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="person-outline" size={16} color={colors.primary} />
+              <Text style={styles.sectionTitle}>Dados Pessoais</Text>
+            </View>
             <View style={styles.card}>
               <Text style={styles.label}>Nome</Text>
               <TextInput style={styles.input} value={nome} onChangeText={setNome}
@@ -319,7 +331,10 @@ export default function SettingsScreen() {
             </View>
 
             {/* CONTA */}
-            <Text style={styles.sectionTitle}>Conta</Text>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="shield-checkmark-outline" size={16} color={colors.primary} />
+              <Text style={styles.sectionTitle}>Conta</Text>
+            </View>
             <View style={styles.card}>
               <Text style={styles.label}>Email</Text>
               <TextInput style={styles.input} value={email} onChangeText={setEmail}
@@ -343,7 +358,10 @@ export default function SettingsScreen() {
             </View>
 
             {/* ZONA PERIGOSA */}
-            <Text style={[styles.sectionTitle, { color: colors.red }]}>Zona Perigosa</Text>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="warning-outline" size={16} color={colors.red} />
+              <Text style={[styles.sectionTitle, { color: colors.red }]}>Zona Perigosa</Text>
+            </View>
             <TouchableOpacity style={styles.dangerBtn} onPress={handleDeleteAccount}>
               <MaterialCommunityIcons name="trash-can-outline" size={20} color={colors.red} />
               <Text style={styles.dangerText}>Eliminar Conta</Text>
@@ -381,20 +399,22 @@ export default function SettingsScreen() {
 
 function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.surface },
+    container: { flex: 1, backgroundColor: c.bg },
     topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 10 },
-    topTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
-    iconCircle: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+    topTitle: { color: c.text, fontSize: 18, fontWeight: 'bold' },
+    iconCircle: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: c.card, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: c.border },
     scrollContent: { padding: 20, paddingBottom: 60 },
 
-    avatarWrap: { alignItems: 'center', marginBottom: 20 },
-    avatarBox: { width: 110, height: 110, borderRadius: 24, backgroundColor: c.primary, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+    avatarWrap: { alignItems: 'center', marginBottom: 24 },
+    avatarRing: { width: 118, height: 118, borderRadius: 26, padding: 4, borderWidth: 2, alignSelf: 'center', marginBottom: 0 },
+    avatarBox: { width: '100%', height: '100%', borderRadius: 20, overflow: 'hidden', backgroundColor: c.primary },
     avatarImg: { width: '100%', height: '100%' },
     avatarText: { fontSize: 52, fontWeight: 'bold', color: '#000' },
-    changePhotoBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12, backgroundColor: 'rgba(94,252,68,0.1)', borderWidth: 1, borderColor: 'rgba(94,252,68,0.3)' },
+    changePhotoBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12, backgroundColor: c.primary + '18', borderWidth: 1, borderColor: c.primary + '44' },
     changePhotoText: { color: c.primary, fontWeight: '600' },
 
-    sectionTitle: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 12, marginTop: 10 },
+    sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, marginTop: 10 },
+    sectionTitle: { color: c.text, fontSize: 16, fontWeight: 'bold' },
     card: { backgroundColor: c.card, borderRadius: 20, padding: 18, borderWidth: 1, borderColor: c.border, marginBottom: 25 },
     label: { color: c.text, fontSize: 13, fontWeight: '600', marginBottom: 8, marginTop: 12 },
     input: { backgroundColor: c.inputBg, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 12, color: c.text, padding: 14, fontSize: 15 },
@@ -406,11 +426,11 @@ function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
 
     primaryBtn: { backgroundColor: c.primary, paddingVertical: 15, borderRadius: 12, alignItems: 'center', marginTop: 20 },
     primaryBtnText: { color: '#000', fontWeight: 'bold', fontSize: 15 },
-    secondaryBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 14, backgroundColor: 'rgba(94,252,68,0.08)', borderWidth: 1, borderColor: 'rgba(94,252,68,0.3)' },
+    secondaryBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 14, backgroundColor: c.primary + '15', borderWidth: 1, borderColor: c.primary + '44' },
     secondaryBtnText: { color: c.primary, fontWeight: 'bold', fontSize: 15 },
     hr: { height: 1, backgroundColor: c.border, marginVertical: 18 },
 
-    dangerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16, borderRadius: 16, backgroundColor: 'rgba(255,68,68,0.1)', borderWidth: 1, borderColor: 'rgba(255,68,68,0.3)' },
+    dangerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16, borderRadius: 16, backgroundColor: c.red + '15', borderWidth: 1, borderColor: c.red + '44' },
     dangerText: { color: c.red, fontSize: 16, fontWeight: '600' },
 
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20 },
