@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../src/lib/supabase';
 import { useTheme } from '../../components/ThemeProvider';
+import { useSettings } from '../../components/SettingsProvider';
 
 const PAGE_SIZE = 20;
 
@@ -37,6 +38,7 @@ function RankAvatar({ uri, ini, colors, size, radius, fontSize, cardBg }: {
 
 export default function RankingScreen() {
   const { colors } = useTheme();
+  const { appName } = useSettings();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [activeTab, setActiveTab] = useState<Tab>('global');
   const [bootstrapping, setBootstrapping] = useState(true);
@@ -253,7 +255,7 @@ export default function RankingScreen() {
       return (
         <View style={[styles.listItem, minha && styles.listHighlight]}>
           <Text style={styles.listRankNumber}>#{index + 1}</Text>
-          <RankAvatar uri={eq.avatar_url} ini={eq.nome.substring(0, 2).toUpperCase()} colors={['#8ef6b5', '#5EFC44']} size={40} radius={14} fontSize={14} cardBg={colors.card} />
+          <RankAvatar uri={eq.avatar_url} ini={eq.nome.substring(0, 2).toUpperCase()} colors={[colors.secondary, colors.primary]} size={40} radius={14} fontSize={14} cardBg={colors.card} />
           <View style={styles.listInfo}>
             <View style={styles.listNameRow}>
               <Text style={styles.listName} numberOfLines={1}>{eq.nome}</Text>
@@ -269,7 +271,7 @@ export default function RankingScreen() {
     return (
       <View style={[styles.listItem, eu && styles.listHighlight]}>
         <Text style={styles.listRankNumber}>#{index + 1}</Text>
-        <RankAvatar uri={jog.avatar_url} ini={inicial(jog.nome)} colors={['#50E3C2', '#0d9488']} size={40} radius={20} fontSize={16} cardBg={colors.card} />
+        <RankAvatar uri={jog.avatar_url} ini={inicial(jog.nome)} colors={[colors.secondary, colors.primary]} size={40} radius={20} fontSize={16} cardBg={colors.card} />
         <View style={styles.listInfo}>
           <View style={styles.listNameRow}>
             <Text style={styles.listName} numberOfLines={1}>{jog.nome}</Text>
@@ -303,7 +305,7 @@ export default function RankingScreen() {
   const ListHeader = showMeCard && activeTab === 'equipas' && minhaEquipa ? (
     <View style={styles.meCard}>
       <Text style={styles.meRank}>#{minhaPosicao}</Text>
-      <RankAvatar uri={minhaEquipa.avatar_url} ini={minhaEquipa.nome.substring(0, 2).toUpperCase()} colors={['#8ef6b5', '#5EFC44']} size={40} radius={14} fontSize={14} cardBg={colors.card} />
+      <RankAvatar uri={minhaEquipa.avatar_url} ini={minhaEquipa.nome.substring(0, 2).toUpperCase()} colors={[colors.secondary, colors.primary]} size={40} radius={14} fontSize={14} cardBg={colors.card} />
       <View style={styles.meInfo}>
         <View style={styles.listNameRow}>
           <Text style={styles.meName} numberOfLines={1}>{minhaEquipa.nome}</Text>
@@ -315,7 +317,7 @@ export default function RankingScreen() {
   ) : showMeCard && me ? (
     <View style={styles.meCard}>
       <Text style={styles.meRank}>#{minhaPosicao}</Text>
-      <RankAvatar uri={me.avatar_url} ini={inicial(me.nome)} colors={['#8ef6b5', '#5EFC44']} size={40} radius={20} fontSize={16} cardBg={colors.card} />
+      <RankAvatar uri={me.avatar_url} ini={inicial(me.nome)} colors={[colors.secondary, colors.primary]} size={40} radius={20} fontSize={16} cardBg={colors.card} />
       <View style={styles.meInfo}>
         <View style={styles.listNameRow}>
           <Text style={styles.meName} numberOfLines={1}>{primeiroNome(me.nome)}</Text>
@@ -329,7 +331,7 @@ export default function RankingScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topNavbar}>
-        <Text style={[styles.logoText, styles.glowText]}>GREEN LEAGUE</Text>
+        <Text style={[styles.logoText, styles.glowText]}>{appName}</Text>
       </View>
 
       <Text style={styles.pageTitle}>Ranking</Text>

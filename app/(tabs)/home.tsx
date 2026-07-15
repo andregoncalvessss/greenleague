@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
 import { useTheme } from '../../components/ThemeProvider';
+import { useSettings } from '../../components/SettingsProvider';
 
 // ============================================================
 // Tipos
@@ -32,14 +33,6 @@ interface CategoriaRapida {
   cor_hex: string | null;
   icon_url: string | null;
 }
-interface AcaoSugerida {
-  id: number;
-  categoria_id: number | null;
-  titulo: string;
-  descricao: string | null;
-  xp_base: number;
-  categoria: { nome: string; cor_hex: string | null } | null;
-}
 interface AtividadeComunidade {
   id: string;
   foto_url: string | null;
@@ -51,7 +44,6 @@ interface AtividadeComunidade {
 interface DadosHome {
   perfil: PerfilHome | null;
   categorias: CategoriaRapida[];
-  sugestoes: AcaoSugerida[];
   comunidade: AtividadeComunidade[];
   streak: number;
 }
@@ -114,7 +106,7 @@ function iniciais(nome?: string | null): string {
 // Acesso à BD
 // ============================================================
 async function obterDadosHome(userId: string): Promise<DadosHome> {
-  const [perfilRes, categoriasRes, sugestoesRes, comunidadeRes, streakRes] =
+  const [perfilRes, categoriasRes, comunidadeRes, streakRes] =
     await Promise.all([
       supabase
         .from('utilizadores')
@@ -127,15 +119,6 @@ async function obterDadosHome(userId: string): Promise<DadosHome> {
         .select('id, nome, cor_hex, icon_url')
         .order('id')
         .limit(4),
-      supabase
-        .from('catalogo_acoes')
-        .select(
-          'id, categoria_id, titulo, descricao, xp_base, categoria:categorias_acao!categoria_id ( nome, cor_hex )'
-        )
-        .eq('ativo', true)
-        .not('categoria_id', 'is', null)
-        .order('xp_base', { ascending: false })
-        .limit(3),
       supabase
         .from('submissoes_acao')
         .select(
@@ -174,7 +157,6 @@ async function obterDadosHome(userId: string): Promise<DadosHome> {
   return {
     perfil,
     categorias: (categoriasRes.data ?? []) as any[],
-    sugestoes: (sugestoesRes.data ?? []) as any[],
     comunidade: (comunidadeRes.data ?? []) as any[],
     streak: calcularStreak(datasStreak),
   };
@@ -195,6 +177,7 @@ function IconeCategoria({ categoria, colors }: { categoria: CategoriaRapida; col
 export default function HomeScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { appName } = useSettings();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -250,7 +233,7 @@ export default function HomeScreen() {
     );
   }
 
-  const { perfil, categorias, sugestoes, comunidade, streak } = dados;
+  const { perfil, categorias, comunidade, streak } = dados;
   const primeiroNome = perfil.nome.split(' ')[0];
 
   // AQUI: Lógica exata e simples a ler da Base de Dados
@@ -262,7 +245,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topNavbar}>
-        <Text style={[styles.logoText, styles.glowText]}>GREEN LEAGUE</Text>
+        <Text style={[styles.logoText, styles.glowText]}>{appName}</Text>
       </View>
 
       <ScrollView
@@ -290,7 +273,7 @@ export default function HomeScreen() {
           {perfil.avatar_url ? (
             <Image source={{ uri: perfil.avatar_url }} style={styles.avatarBox} />
           ) : (
-            <LinearGradient colors={['#8ef6b5', '#50E3C2']} style={styles.avatarBox}>
+            <LinearGradient colors={[colors.primary, colors.secondary]} style={styles.avatarBox}>
               <Text style={styles.avatarLetter}>{iniciais(perfil.nome)}</Text>
             </LinearGradient>
           )}
@@ -305,7 +288,7 @@ export default function HomeScreen() {
           </View>
           <View style={styles.progressBarBg}>
             <LinearGradient
-              colors={['#5EFC44', '#50E3C2']}
+              colors={[colors.primary, colors.secondary]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={[styles.progressBarFill, { width: `${progressoPercentagem}%` }]}
@@ -340,42 +323,15 @@ export default function HomeScreen() {
           </>
         )}
 
-        {sugestoes.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>Ações sugeridas</Text>
-            {sugestoes.map((acao) => {
-              const cor = acao.categoria?.cor_hex || colors.primary;
-              return (
-                <TouchableOpacity
-                  key={acao.id}
-                  style={styles.missionCard}
-                  activeOpacity={0.7}
-                  onPress={() => router.push({ pathname: '/adicionar-acao', params: { acao: String(acao.id) } })}
-                >
-                  <View style={[styles.missionIconBox, { borderColor: cor + '40', backgroundColor: cor + '0D' }]}>
-                    <MaterialCommunityIcons name="leaf" size={28} color={cor} />
-                  </View>
-                  <View style={styles.missionContent}>
-                    <Text style={styles.missionTitle}>{acao.titulo}</Text>
-                    {acao.descricao ? (
-                      <Text style={styles.missionDesc} numberOfLines={2}>
-                        {acao.descricao}
-                      </Text>
-                    ) : null}
-                    <Text style={styles.missionReward}>+{acao.xp_base} XP</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </>
-        )}
 
         <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Atividade da Comunidade</Text>
         {comunidade.length === 0 ? (
           <Text style={styles.vazioComunidade}>Ainda não há atividade. Sê o primeiro!</Text>
         ) : (
           comunidade.map((item) => {
-            const cor = item.acao?.categoria?.cor_hex || colors.primary;
+            const acaoItem = Array.isArray(item.acao) ? item.acao[0] : item.acao;
+            const catItem = Array.isArray(acaoItem?.categoria) ? acaoItem.categoria[0] : acaoItem?.categoria;
+            const cor = catItem?.cor_hex || colors.primary;
             const nome = item.utilizador?.nome ?? 'Estudante';
             return (
               <View key={item.id} style={styles.missionCard}>
@@ -388,7 +344,7 @@ export default function HomeScreen() {
                 )}
                 <View style={styles.missionContent}>
                   <Text style={styles.missionTitle}>{nome}</Text>
-                  <Text style={styles.missionDesc}>{item.acao?.titulo ?? 'Registou uma ação'}</Text>
+                  <Text style={styles.missionDesc}>{acaoItem?.titulo ?? 'Registou uma ação'}</Text>
                   <Text style={styles.comunidadeTempo}>{tempoRelativo(item.criado_em)}</Text>
                 </View>
               </View>

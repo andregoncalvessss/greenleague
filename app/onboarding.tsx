@@ -54,6 +54,28 @@ export default function OnboardingScreen() {
       } else {
         console.error("Erro a carregar escolas:", error);
       }
+
+      // 3. Se já existir perfil, pré-preenche o que ainda é válido (nº aluno,
+      //    ano, e escola/curso caso continuem a existir).
+      if (user) {
+        const { data: perfil } = await supabase
+          .from('utilizadores')
+          .select('numero_aluno, ano_frequencia, escola_id, curso_id, escolas(id, nome), cursos(id, nome, escola_id)')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (perfil) {
+          if (perfil.numero_aluno) setNumAluno(String(perfil.numero_aluno));
+          if (perfil.ano_frequencia) setAno(perfil.ano_frequencia);
+          const escolaValida = (perfil as any).escolas;
+          if (escolaValida) {
+            setEscolaObj(escolaValida);
+            const { data: cursos } = await supabase.from('cursos').select('*').eq('escola_id', escolaValida.id).order('nome');
+            if (cursos) setCursosDb(cursos);
+            const cursoValido = (perfil as any).cursos;
+            if (cursoValido && cursoValido.escola_id === perfil.escola_id) setCursoObj(cursoValido);
+          }
+        }
+      }
     }
     loadInitialData();
   }, []);

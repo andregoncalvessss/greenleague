@@ -260,7 +260,7 @@ export default function SettingsScreen() {
                     <Image source={{ uri: avatarUrl }} style={styles.avatarImg} contentFit="cover" />
                   ) : (
                     <LinearGradient
-                      colors={isDark ? ['#5EFC44', '#22C55E'] : [colors.primary, colors.secondary]}
+                      colors={[colors.primary, colors.secondary]}
                       style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
                     >
                       <Text style={styles.avatarText}>{nome ? nome.charAt(0).toUpperCase() : '?'}</Text>

@@ -1,13 +1,70 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Tabs, useRouter } from 'expo-router';
-import { View, TouchableOpacity, Platform } from 'react-native';
+import { View, TouchableOpacity, Platform, AppState } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../components/ThemeProvider';
+import { supabase } from '../../src/lib/supabase';
 
 export default function TabsLayout() {
   const router = useRouter();
   const { colors, isDark } = useTheme();
+
+  // Se a escola/curso do utilizador já não existir (removida no backoffice) ou
+  // o curso não pertencer à sua escola, reenvia-o para o onboarding para
+  // escolher novamente — o mesmo ecrã do registo.
+  // Corre no arranque, em tempo real (Realtime) e ao voltar ao primeiro plano.
+  useEffect(() => {
+    let ativo = true;
+    let channel: any = null;
+
+    async function validar() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: perfil } = await supabase
+        .from('utilizadores')
+        .select('role, escola_id, curso_id, escolas(id), cursos(id, escola_id)')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (!ativo || !perfil) return;
+      if (perfil.role === 'admin') return; // admins não precisam de escola/curso
+
+      const escolaOk = !!perfil.escola_id && !!(perfil as any).escolas;
+      const curso = (perfil as any).cursos;
+      const cursoOk = !!perfil.curso_id && !!curso && curso.escola_id === perfil.escola_id;
+
+      if (!escolaOk || !cursoOk) {
+        router.replace('/onboarding');
+      }
+    }
+
+    validar();
+
+    // Tempo real: reage quando o admin limpa a escola/curso deste utilizador.
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!ativo || !user) return;
+      channel = supabase
+        .channel('perfil-escola-curso')
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'utilizadores', filter: `id=eq.${user.id}` },
+          () => validar()
+        )
+        .subscribe();
+    })();
+
+    // Rede de segurança: revalida ao voltar a app ao primeiro plano.
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') validar();
+    });
+
+    return () => {
+      ativo = false;
+      if (channel) supabase.removeChannel(channel);
+      appStateSub.remove();
+    };
+  }, []);
 
   return (
     <View style={{ flex: 1 }}>
@@ -109,11 +166,11 @@ export default function TabsLayout() {
         <View style={{
           width: 68, height: 68, borderRadius: 34,
           padding: 4,
-          backgroundColor: isDark ? 'rgba(94,252,68,0.18)' : 'rgba(21,128,61,0.12)',
+          backgroundColor: colors.primary + (isDark ? '2E' : '1F'),
           justifyContent: 'center', alignItems: 'center',
         }}>
           <LinearGradient
-            colors={isDark ? ['#5EFC44', '#22C55E', '#50E3C2'] : [colors.primary, colors.secondary]}
+            colors={[colors.primary, colors.primary, colors.secondary]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={{

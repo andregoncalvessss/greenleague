@@ -20,6 +20,8 @@ const menuItems = [
   { icon: "layers-outline",           iconActive: "layers",            title: "Ações",         route: "/backoffice/submissoes" },
   { icon: "bar-chart-outline",        iconActive: "bar-chart",         title: "Estatísticas", route: "/backoffice/estatisticas" },
   { icon: "download-outline",         iconActive: "download",          title: "Exportar",     route: "/backoffice/exportar" },
+  { icon: "color-palette-outline",    iconActive: "color-palette",     title: "Aparência",    route: "/backoffice/aparencia" },
+  { icon: "settings-outline",         iconActive: "settings",          title: "Definições",   route: "/backoffice/definicoes" },
 ];
 
 // Transições CSS — só funcionam no web (React Native Web passa estilos desconhecidos como CSS)

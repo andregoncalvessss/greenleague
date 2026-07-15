@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Share } from 'react-native';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Share, AppState } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,11 +7,13 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
 import { useToast } from '../../components/ToastProvider';
 import { useTheme } from '../../components/ThemeProvider';
+import { useSettings } from '../../components/SettingsProvider';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { showConfirm } = useToast();
   const { colors, isDark } = useTheme();
+  const { appName } = useSettings();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState<any>(null);
@@ -21,6 +23,15 @@ export default function ProfileScreen() {
       fetchUserData();
     }, [])
   );
+
+  // Atualiza os dados (ex: nome da escola alterado no backoffice) ao voltar
+  // a app ao primeiro plano.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') fetchUserData();
+    });
+    return () => sub.remove();
+  }, []);
 
   async function fetchUserData() {
     try {
@@ -89,14 +100,17 @@ export default function ProfileScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-          {/* BOTÕES HEADER */}
-          <View style={styles.headerButtons}>
-            <TouchableOpacity style={styles.iconCircle} onPress={handleShare} activeOpacity={0.75}>
-              <Feather name="share-2" size={20} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconCircle} onPress={() => router.push('/definicoes')} activeOpacity={0.75}>
-              <Ionicons name="settings-outline" size={20} color={colors.text} />
-            </TouchableOpacity>
+          {/* HEADER: logo à esquerda + botões à direita */}
+          <View style={styles.headerRow}>
+            <Text style={[styles.logoText, styles.glowText]}>{appName}</Text>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity style={styles.iconCircle} onPress={handleShare} activeOpacity={0.75}>
+                <Feather name="share-2" size={20} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconCircle} onPress={() => router.push('/definicoes')} activeOpacity={0.75}>
+                <Ionicons name="settings-outline" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* CARD PRINCIPAL */}
@@ -106,7 +120,7 @@ export default function ProfileScreen() {
                 {userData?.avatar_url ? (
                   <Image source={{ uri: userData.avatar_url }} style={styles.avatarImg} contentFit="cover" />
                 ) : (
-                  <LinearGradient colors={isDark ? ['#5EFC44', '#22C55E'] : [colors.primary, colors.secondary]} style={styles.avatarGrad}>
+                  <LinearGradient colors={[colors.primary, colors.secondary]} style={styles.avatarGrad}>
                     <Text style={styles.avatarText}>
                       {userData?.nome ? userData.nome.charAt(0).toUpperCase() : '?'}
                     </Text>
@@ -136,7 +150,7 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.progressBarBg}>
               <LinearGradient
-                colors={isDark ? ['#5EFC44', '#50E3C2'] : [colors.primary, colors.secondary]}
+                colors={[colors.primary, colors.secondary]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={[styles.progressBarFill, { width: `${progressoPercentagem}%` }]}
@@ -220,8 +234,11 @@ function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
     container: { flex: 1, backgroundColor: c.bg },
     scrollContent: { padding: 20, paddingBottom: 120 },
 
-    // BOTÕES HEADER
-    headerButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginBottom: 20 },
+    // HEADER (logo + botões)
+    headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    logoText: { fontSize: 22, fontWeight: '900', color: c.primary, letterSpacing: 0.5, fontStyle: 'italic', flexShrink: 1 },
+    glowText: { textShadowColor: c.primary, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 },
+    headerButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
     iconCircle: {
       width: 44, height: 44, borderRadius: 22,
       backgroundColor: c.card,

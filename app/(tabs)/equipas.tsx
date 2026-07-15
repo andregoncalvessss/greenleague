@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../src/lib/supabase';
 import { useToast } from '../../components/ToastProvider';
 import { useTheme } from '../../components/ThemeProvider';
+import { useSettings } from '../../components/SettingsProvider';
 
 const LIMITE_MEMBROS = 5;
 const TAMANHO_PAGINA_SUGESTOES = 4;
@@ -20,6 +21,7 @@ interface PedidoEntrada { id: string; utilizador_id: string; utilizadores: { nom
 export default function EquipasScreen() {
   const { showToast, showConfirm } = useToast();
   const { colors } = useTheme();
+  const { appName } = useSettings();
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState<Me | null>(null);
 
@@ -494,7 +496,7 @@ export default function EquipasScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topNavbar}>
-        <Text style={[styles.logoText, styles.glowText]}>GREEN LEAGUE</Text>
+        <Text style={[styles.logoText, styles.glowText]}>{appName}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">

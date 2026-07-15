@@ -610,7 +610,7 @@ function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
     actionInfo: { flex: 1, marginRight: 10 },
     actionTitle: { color: c.text, fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
     actionDesc: { color: c.textMuted, fontSize: 12 },
-    xpBadge: { backgroundColor: 'rgba(94, 252, 68, 0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: c.primary },
+    xpBadge: { backgroundColor: c.primary + '1A', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: c.primary },
     xpText: { color: c.primary, fontWeight: 'bold', fontSize: 11, textAlign: 'center' },
     formHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: Platform.OS === 'ios' ? 20 : 30, borderBottomWidth: 1, borderBottomColor: c.border },
     backButton: { padding: 5 },

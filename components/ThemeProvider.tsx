@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
-import { useColorScheme } from "react-native";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { AppState } from "react-native";
+import { supabase } from "../src/lib/supabase";
 
 // ── Tokens ────────────────────────────────────────────────────────────────────
 
@@ -85,24 +86,71 @@ type ThemeCtx = {
   isDark: boolean;
   colors: Colors;
   toggleTheme: () => void;
+  refreshColors: () => Promise<void>;
 };
 
 const ThemeContext = createContext<ThemeCtx>({
   isDark: true,
   colors: DARK,
   toggleTheme: () => {},
+  refreshColors: async () => {},
 });
 
 const STORAGE_KEY = "@greenleague_theme";
 
+type Overrides = { primary?: string; secondary?: string };
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [isDark, setIsDark] = useState(true); // default: dark
+  const [overrides, setOverrides] = useState<Overrides>({});
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then(val => {
       if (val !== null) setIsDark(val === "dark");
     });
   }, []);
+
+  // Carrega cores personalizadas definidas no backoffice (tab Aparência).
+  const refreshColors = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from("configuracoes")
+        .select("chave, valor")
+        .in("chave", ["cor_primaria", "cor_secundaria"]);
+      const map = Object.fromEntries((data || []).map((c: any) => [c.chave, c.valor]));
+      setOverrides({
+        primary: map["cor_primaria"]?.trim() || undefined,
+        secondary: map["cor_secundaria"]?.trim() || undefined,
+      });
+    } catch {
+      // sem tabela/valores — mantém o default
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshColors();
+
+    const channel = supabase
+      .channel("cfg-cores")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "configuracoes" },
+        (payload: any) => {
+          const chave = payload?.new?.chave || payload?.old?.chave;
+          if (chave === "cor_primaria" || chave === "cor_secundaria") refreshColors();
+        }
+      )
+      .subscribe();
+
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshColors();
+    });
+
+    return () => {
+      supabase.removeChannel(channel);
+      appStateSub.remove();
+    };
+  }, [refreshColors]);
 
   const toggleTheme = useCallback(() => {
     setIsDark(prev => {
@@ -112,8 +160,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const colors: Colors = useMemo(() => {
+    const base = isDark ? DARK : LIGHT;
+    return {
+      ...base,
+      ...(overrides.primary ? { primary: overrides.primary, primaryDark: overrides.primary } : {}),
+      ...(overrides.secondary ? { secondary: overrides.secondary } : {}),
+    };
+  }, [isDark, overrides]);
+
   return (
-    <ThemeContext.Provider value={{ isDark, colors: isDark ? DARK : LIGHT, toggleTheme }}>
+    <ThemeContext.Provider value={{ isDark, colors, toggleTheme, refreshColors }}>
       {children}
     </ThemeContext.Provider>
   );

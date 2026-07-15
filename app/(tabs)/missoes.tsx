@@ -1,16 +1,17 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { StyleSheet, Text, View, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../src/lib/supabase';
 import { useTheme } from '../../components/ThemeProvider';
+import { useSettings } from '../../components/SettingsProvider';
 
 const DIAS_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
 export default function MissoesScreen() {
   const router = useRouter();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
+  const { appName } = useSettings();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [loading, setLoading] = useState(true);
   const [missoes, setMissoes] = useState<any[]>([]);
@@ -106,14 +107,10 @@ export default function MissoesScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={isDark ? ['#121214', '#1A1A2E', '#0D2B1D'] : [colors.surface, colors.surface, '#E8F5E9']}
-        style={StyleSheet.absoluteFillObject}
-      />
       <SafeAreaView style={{ flex: 1 }}>
 
         <View style={styles.topNavbar}>
-          <Text style={[styles.logoText, styles.glowText]}>GREEN LEAGUE</Text>
+          <Text style={[styles.logoText, styles.glowText]}>{appName}</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -140,7 +137,7 @@ export default function MissoesScreen() {
 
           {missoes.length === 0 ? (
             <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="trophy-outline" size={64} color='rgba(94,252,68,0.2)' />
+              <MaterialCommunityIcons name="trophy-outline" size={64} color={colors.primary + '33'} />
               <Text style={styles.emptyTitle}>Dia de descanso!</Text>
               <Text style={styles.emptyDesc}>Não há missões configuradas para hoje. Volta amanhã!</Text>
             </View>
@@ -256,16 +253,16 @@ function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
 
     sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
     sectionTitle: { color: c.text, fontSize: 20, fontWeight: 'bold' },
-    badge: { backgroundColor: 'rgba(94,252,68,0.1)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(94,252,68,0.3)' },
+    badge: { backgroundColor: c.primary + '1A', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: c.primary + '4D' },
     badgeText: { color: c.primary, fontSize: 14, fontWeight: 'bold' },
 
     missionCard: { flexDirection: 'row', backgroundColor: c.card, borderRadius: 20, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: c.border },
     missionCardCompleted: { opacity: 0.65 },
-    missionIconBox: { width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(94,252,68,0.05)', justifyContent: 'center', alignItems: 'center', marginRight: 16, borderWidth: 1, flexShrink: 0 },
+    missionIconBox: { width: 52, height: 52, borderRadius: 26, backgroundColor: c.primary + '0D', justifyContent: 'center', alignItems: 'center', marginRight: 16, borderWidth: 1, flexShrink: 0 },
     missionContent: { flex: 1 },
     missionTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
     missionTitle: { color: c.text, fontSize: 15, fontWeight: 'bold', flex: 1 },
-    bonusBadge: { backgroundColor: 'rgba(80,227,194,0.15)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(80,227,194,0.3)' },
+    bonusBadge: { backgroundColor: c.secondary + '26', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: c.secondary + '4D' },
     bonusText: { color: c.secondary, fontSize: 10, fontWeight: 'bold' },
     catTag: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
     catDot: { width: 8, height: 8, borderRadius: 3 },
@@ -275,7 +272,7 @@ function makeStyles(c: ReturnType<typeof useTheme>['colors']) {
     xpGroup: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     missionReward: { color: c.primary, fontSize: 14, fontWeight: 'bold' },
     co2Text: { color: c.textMuted, fontSize: 12 },
-    completedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(94,252,68,0.1)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(94,252,68,0.3)' },
+    completedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.primary + '1A', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: c.primary + '4D' },
     completedText: { color: c.primary, fontSize: 12, fontWeight: 'bold' },
     pendenteBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,176,32,0.1)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,176,32,0.3)' },
     pendenteText: { color: '#FFB020', fontSize: 12, fontWeight: 'bold' },
